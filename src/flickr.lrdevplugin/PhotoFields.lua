@@ -4,8 +4,6 @@ Maps Lightroom photo metadata to Flickr upload/setMeta fields (docs/DESIGN.md §
 
 local M = {}
 
-M.MACHINE_TAG_NS = "lrflickr"
-
 local function blank(s)
 	return s == nil or s:match("^%s*$") ~= nil
 end
@@ -18,25 +16,24 @@ function M.title(meta)
 	return ((meta.fileName or ""):gsub("%.[^.]*$", ""))
 end
 
-function M.machineTag(uuid)
-	return string.format("%s:uuid=%s", M.MACHINE_TAG_NS, uuid)
+--- Fields pushed to Flickr for a photo; also the input of the metadata fingerprint.
+--- meta: { title, fileName, caption }
+function M.metadataFields(meta)
+	return { title = M.title(meta), description = meta.caption or "" }
 end
 
 --[[
-meta: { title, fileName, caption, uuid }
+meta: { title, fileName, caption }
 privacy: { isPublic, isFriend, isFamily, hidden }; defaults to fully private and hidden from search.
 ]]
 function M.uploadFields(meta, privacy)
 	privacy = privacy or {}
-	return {
-		title = M.title(meta),
-		description = meta.caption or "",
-		tags = M.machineTag(meta.uuid),
-		is_public = privacy.isPublic and "1" or "0",
-		is_friend = privacy.isFriend and "1" or "0",
-		is_family = privacy.isFamily and "1" or "0",
-		hidden = (privacy.hidden == false) and "1" or "2",
-	}
+	local fields = M.metadataFields(meta)
+	fields.is_public = privacy.isPublic and "1" or "0"
+	fields.is_friend = privacy.isFriend and "1" or "0"
+	fields.is_family = privacy.isFamily and "1" or "0"
+	fields.hidden = (privacy.hidden == false) and "1" or "2"
+	return fields
 end
 
 function M.photoUrl(nsid, photoId)

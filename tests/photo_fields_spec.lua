@@ -7,12 +7,18 @@ describe("PhotoFields", function()
 		assert.equal("a.b", PhotoFields.title({ fileName = "a.b.jpg" }))
 	end)
 
-	it("uploads private and hidden by default, with the uuid machine tag", function()
-		local f = PhotoFields.uploadFields({ fileName = "x.jpg", uuid = "ABC-1" })
+	it("maps caption to description", function()
+		assert.same(
+			{ title = "T", description = "C" },
+			PhotoFields.metadataFields({ title = "T", fileName = "x.jpg", caption = "C" })
+		)
+	end)
+
+	it("uploads private and hidden by default, without tags", function()
+		local f = PhotoFields.uploadFields({ fileName = "x.jpg" })
 		assert.same({
 			title = "x",
 			description = "",
-			tags = "lrflickr:uuid=ABC-1",
 			is_public = "0",
 			is_friend = "0",
 			is_family = "0",
@@ -21,7 +27,7 @@ describe("PhotoFields", function()
 	end)
 
 	it("applies privacy settings", function()
-		local f = PhotoFields.uploadFields({ fileName = "x", uuid = "u" }, { isPublic = true, hidden = false })
+		local f = PhotoFields.uploadFields({ fileName = "x" }, { isPublic = true, hidden = false })
 		assert.equal("1", f.is_public)
 		assert.equal("1", f.hidden)
 	end)

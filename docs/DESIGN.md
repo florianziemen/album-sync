@@ -86,7 +86,7 @@ Per batch, in `processRenderedPhotos`:
    - (b) Run a nested `LrExportSession` per photo, just in time, to get a real look-ahead of N.
    - Choose after measuring.
 3. **Upload.**
-   - Use `async=1`. Add the machine tag `lrflickr:uuid=<photo uuid>`.
+   - Use `async=1`. No identifying tag is added (decided 2026-10-24: tags are too prominent on Flickr). The catalog link is the plugin field `flickrId`.
    - Write a journal entry *before* sending: uuid, file hash, start time.
    - Then poll `checkTickets` and record the ticket in the journal.
 4. **Finalize.**
@@ -104,7 +104,7 @@ Per batch, in `processRenderedPhotos`:
 | Open journal entry | Action |
 |---|---|
 | Has a ticket | Call `checkTickets`. |
-| No ticket | Search `machine_tags=lrflickr:uuid=…`. |
+| No ticket | List own uploads since the attempt (`people.getPhotos`, `min_upload_date`) and compare title, `date_taken` and `o_dims`. Use `getExif` for ties. |
 | Found on Flickr | Link it; do not re-upload. |
 | Not found | Drop the entry; the photo is uploaded normally. |
 
@@ -112,15 +112,21 @@ Per batch, in `processRenderedPhotos`:
 
 These are stored per photo after each successful publish.
 
-- **Image fingerprint:** SHA256 of:
-  - the serialized develop settings (including crop)
-  - the master file size and modification time
-  - the render-relevant export settings (format, quality, size, sharpening, watermark)
-  - the fingerprint scheme version
-- **Metadata fingerprint:** SHA256 of the canonical title, description, tags, location and privacy *as sent*.
+Implemented in `Fingerprint.lua`. SHA-1 hex of a canonical serialization; this is not a security use. Stored in the plugin fields `imageFingerprint` and `metadataFingerprint`.
+
+- **Image fingerprint:**
+  - the develop settings (`photo:getDevelopSettings()`, including crop)
+  - the render-relevant export settings (`LR_format`, `LR_jpeg_*`, `LR_size_*`, `LR_outputSharpening*`, watermark, color space, bit depth)
+  - the scheme version
+  - The master file's size and modification time are deliberately *not* included: writing metadata to DNG/JPEG masters would trigger false replaces.
+- **Metadata fingerprint:** the fields as sent (currently title and description; tags, location and privacy will follow).
+- **Planner** (`PublishPlanner.lua`): upload / relink (already on Flickr via `flickrId`) / replace / metadata / adopt (published before fingerprints existed: push metadata and store fingerprints) / noop.
+- **Replace without Pro:** one dialog per batch with two choices. "Update metadata only" sets `flickrState=imageOutdated`. "Leave as modified" sends nothing for those photos.
 - **Remote fingerprint:** the same metadata fields as returned by Flickr after the push. Used to detect edits made on Flickr.
 
-A "force replace" menu action covers changes that are invisible to the fingerprint, such as process-version rendering differences.
+A "force replace" menu action covers changes that are invisible to the fingerprint, such as process-version rendering differences or a master edited externally.
+
+Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG (to tell virtual copies apart when matching via `getExif`).
 
 ## 7. Albums and legacy matching
 
@@ -143,7 +149,7 @@ A "force replace" menu action covers changes that are invisible to the fingerpri
 
 **Matching tiers** (stop at the first unique hit):
 
-1. Machine tag `lrflickr:uuid` (photos uploaded by this plugin).
+1. Plugin field `flickrId` (photos published by this plugin in this catalog).
 2. `date_taken` string equals the LR local capture time (to the second), **and**
    - the title equals `fileName` or `preservedFileName` without extension, or
    - the aspect ratio of `o_dims` equals the cropped dimensions (±1%, either orientation).
@@ -230,7 +236,7 @@ Throttle all API calls to at most 1 per second, which stays below 3600 per hour 
 
    **Account lock** (done): every publish verifies via `flickr.test.login` that the token belongs to the service's locked NSID.
 4. Whether `LrHttp.postMultipart` streams large files (>100 MB) or loads them into memory.
-5. Async upload: ticket lifetime, and search-index lag for machine-tag lookup.
+5. Async upload: ticket lifetime, and how fast new uploads show up in `people.getPhotos`.
 6. `dedup_check` behavior, and the default title when none is sent.
 7. `findPhotos` date-range search descriptor syntax, and `batchGetRawMetadata` speed on 50k photos.
 

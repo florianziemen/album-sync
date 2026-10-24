@@ -51,6 +51,32 @@ describe("FlickrApi", function()
 		verifySignature("POST", up.url, up.params)
 	end)
 
+	it("replaces via the replace endpoint and flags non-Pro accounts", function()
+		local deps = h.fakeDeps({}, {
+			{ status = 200, body = '<rsp stat="ok"><photoid secret="s" originalsecret="o">42</photoid></rsp>' },
+			{ status = 200, body = '<rsp stat="fail"><err code="1" msg="Not a pro account" /></rsp>' },
+		})
+		local api = FlickrApi.new(deps, h.CREDS, ACCESS)
+		assert.equal("42", api:replace("/tmp/x.jpg", "42"))
+		local up = deps.uploads[1]
+		assert.equal("https://up.flickr.com/services/replace/", up.url)
+		assert.equal("42", up.params.photo_id)
+		verifySignature("POST", up.url, up.params)
+		local _, e = api:replace("/tmp/x.jpg", "42")
+		assert.equal("replace_not_pro", e.class)
+	end)
+
+	it("reads Pro status", function()
+		local deps = h.fakeDeps({
+			{ status = 200, body = '{"person":{"id":"1@N07","ispro":0},"stat":"ok"}' },
+			{ status = 200, body = '{"person":{"id":"1@N07","ispro":1},"stat":"ok"}' },
+		})
+		local api = FlickrApi.new(deps, h.CREDS, ACCESS)
+		assert.is_false(api:isPro("1@N07"))
+		assert.is_true(api:isPro("1@N07"))
+		assert.equal("flickr.people.getInfo", deps.calls[1].params.method)
+	end)
+
 	it("classifies upload errors and wait hints", function()
 		local deps = h.fakeDeps({}, {
 			{

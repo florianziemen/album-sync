@@ -9,9 +9,11 @@ return {
 		file = "ServiceProvider.lua",
 	},
 
+	LrMetadataProvider = "MetadataDefinition.lua",
+
 	LrExportMenuItems = {
 		{ title = "Flickr: Log in", file = "LoginMenuItem.lua" },
 	},
 
-	VERSION = { major = 0, minor = 0, revision = 2 },
+	VERSION = { major = 0, minor = 1, revision = 0 },
 }

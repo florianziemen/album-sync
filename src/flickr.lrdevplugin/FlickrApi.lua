@@ -14,6 +14,7 @@ local FlickrResponse = require("FlickrResponse")
 
 local REST_URL = "https://api.flickr.com/services/rest/"
 local UPLOAD_URL = "https://up.flickr.com/services/upload/"
+local REPLACE_URL = "https://up.flickr.com/services/replace/"
 
 local M = {}
 M.__index = M
@@ -59,17 +60,40 @@ function M:call(method, params, httpMethod)
 	return FlickrResponse.parseRest(resp)
 end
 
---- Upload a file. `fields` are Flickr upload arguments (title, tags, is_public, ...).
---- Returns the photo id or nil, err.
-function M:upload(filePath, fields)
-	local signed = self:sign("POST", UPLOAD_URL, fields or {}, self.access.token, self.access.tokenSecret)
+function M:_postFile(url, filePath, fields)
+	local signed = self:sign("POST", url, fields or {}, self.access.token, self.access.tokenSecret)
 	local resp = self.deps.postMultipart({
-		url = UPLOAD_URL,
+		url = url,
 		params = signed,
 		filePath = filePath,
 		fileField = "photo",
 	})
 	return FlickrResponse.parseUpload(resp)
+end
+
+--- Upload a file. `fields` are Flickr upload arguments (title, tags, is_public, ...).
+--- Returns the photo id or nil, err.
+function M:upload(filePath, fields)
+	return self:_postFile(UPLOAD_URL, filePath, fields)
+end
+
+--- Replace the image of an existing photo (Flickr Pro only). Returns the photo id or nil, err;
+--- a non-Pro account yields class "replace_not_pro".
+function M:replace(filePath, photoId)
+	local id, e = self:_postFile(REPLACE_URL, filePath, { photo_id = photoId })
+	if e and e.code == 1 then
+		e.class = "replace_not_pro"
+	end
+	return id, e
+end
+
+--- Returns true/false for Pro status of `nsid`, or nil, err.
+function M:isPro(nsid)
+	local data, e = self:call("flickr.people.getInfo", { user_id = nsid })
+	if not data then
+		return nil, e
+	end
+	return tonumber(data.person and data.person.ispro) == 1
 end
 
 return M

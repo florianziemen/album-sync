@@ -1,36 +1,42 @@
 --[[
-Publish service (development spike).
+Flickr publish service.
 
 - Account lock: publishing is refused unless the stored token belongs to the locked account.
-- Rendering spike: logs how far Lightroom renders ahead of the upload loop ("SPIKE" lines
-  in lrflickr.log), and tests skipRender() for already-published photos.
-- New photos are uploaded private and hidden from search; already-published photos only get
-  their title/description updated. Nothing is ever deleted on Flickr.
+- Per photo, PublishPlanner decides: upload / relink / replace / metadata / adopt / noop.
+  Lightroom renders nothing; photos that need pixels are rendered just in time (RenderQueue).
+- Flickr ID and fingerprints are stored in plugin fields right after each successful call.
+- New photos are uploaded private and hidden from search. Nothing is ever deleted on Flickr.
 ]]
 
 local LrDate = import("LrDate")
+local LrDialogs = import("LrDialogs")
 local LrErrors = import("LrErrors")
 local LrFileUtils = import("LrFileUtils")
 local LrLogger = import("LrLogger")
-local LrPathUtils = import("LrPathUtils")
 local LrTasks = import("LrTasks")
 local LrView = import("LrView")
 
 local AccountGuard = require("AccountGuard")
+local AppDeps = require("AppDeps")
+local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
-local AppDeps = require("AppDeps")
-local PhotoRenderer = require("PhotoRenderer")
+local Fingerprint = require("Fingerprint")
 local PhotoFields = require("PhotoFields")
+local PhotoRenderer = require("PhotoRenderer")
+local PublishPlanner = require("PublishPlanner")
 local RenderQueue = require("RenderQueue")
+
+local RENDER_AHEAD = 2
 
 local log = LrLogger("lrflickr")
 log:enable("logfile")
 
-local function spike(event, fields)
-	local parts = { string.format("SPIKE t=%.3f ev=%s", LrDate.currentTime(), event) }
+-- One structured log line per event: "PUBLISH t=... ev=... k=v ...".
+local function event(name, fields)
+	local parts = { string.format("PUBLISH t=%.3f ev=%s", LrDate.currentTime(), name) }
 	local keys = {}
 	for k in pairs(fields or {}) do
 		keys[#keys + 1] = k
@@ -42,17 +48,6 @@ local function spike(event, fields)
 	log:info(table.concat(parts, " "))
 end
 
-local function dirStats(dir)
-	local count, bytes = 0, 0
-	if dir and LrFileUtils.exists(dir) then
-		for path in LrFileUtils.files(dir) do
-			count = count + 1
-			bytes = bytes + (LrFileUtils.fileAttributes(path).fileSize or 0)
-		end
-	end
-	return count, bytes
-end
-
 local provider = {
 	supportsIncrementalPublish = "only",
 	canExportVideo = false,
@@ -62,18 +57,13 @@ local provider = {
 	exportPresetFields = {
 		{ key = "lockedNsid", default = "" },
 		{ key = "lockedUsername", default = "" },
-		{ key = "spikeUploadMode", default = "dryRun" },
-		{ key = "spikeSkipStrategy", default = "none" },
-		{ key = "spikeDelay", default = 3 },
-		{ key = "spikeDeleteAfterUpload", default = true },
-		{ key = "spikeRenderMode", default = "lightroom" },
-		{ key = "spikeAhead", default = 2 },
+		{ key = "dryRun", default = false },
 	},
 }
 
 function provider.getCollectionBehaviorInfo()
 	return {
-		defaultCollectionName = "Photostream (dev)",
+		defaultCollectionName = "Photostream",
 		defaultCollectionCanBeDeleted = false,
 		canAddCollection = false,
 		maxCollectionSetDepth = 0,
@@ -84,10 +74,11 @@ function provider.metadataThatTriggersRepublish()
 	return { default = false, title = true, caption = true, keywords = true, gps = true, dateCreated = true }
 end
 
--- Never delete on Flickr: only drop the photo from the published collection.
+-- Never delete on Flickr: only drop the photo from the published collection. The plugin
+-- field flickrId stays, so re-adding the photo relinks instead of uploading a duplicate.
 function provider.deletePhotosFromPublishedCollection(_, arrayOfPhotoIds, deletedCallback)
 	for _, id in ipairs(arrayOfPhotoIds) do
-		spike("removeFromCollectionOnly", { id = id })
+		event("removeFromCollectionOnly", { id = id })
 		deletedCallback(id)
 	end
 end
@@ -139,115 +130,123 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 		},
 		{
-			title = "Development spike",
+			title = "Development",
 			f:row({
-				f:static_text({ title = "Upload:", width = 90 }),
-				f:popup_menu({
-					value = bind("spikeUploadMode"),
-					items = {
-						{ title = "Dry run (sleep, no Flickr)", value = "dryRun" },
-						{ title = "Upload to Flickr (private)", value = "flickr" },
-					},
+				f:checkbox({
+					title = "Dry run: plan and render, but make no changes on Flickr or in the catalog",
+					value = bind("dryRun"),
 				}),
-				f:static_text({ title = "Dry-run seconds:" }),
-				f:edit_field({ value = bind("spikeDelay"), width_in_chars = 4, min = 0, max = 60, precision = 1 }),
-			}),
-			f:row({
-				f:static_text({ title = "Skip render:", width = 90 }),
-				f:popup_menu({
-					value = bind("spikeSkipStrategy"),
-					items = {
-						{ title = "Never", value = "none" },
-						{ title = "Already published (pre-pass)", value = "skipFirstPass" },
-					},
-				}),
-				f:checkbox({ title = "Delete rendered file after upload", value = bind("spikeDeleteAfterUpload") }),
-			}),
-			f:row({
-				f:static_text({ title = "Render:", width = 90 }),
-				f:popup_menu({
-					value = bind("spikeRenderMode"),
-					items = {
-						{ title = "Lightroom (whole batch)", value = "lightroom" },
-						{ title = "Own, just in time", value = "own" },
-					},
-				}),
-				f:static_text({ title = "Files ahead:" }),
-				f:edit_field({ value = bind("spikeAhead"), width_in_chars = 3, min = 0, max = 20, precision = 0 }),
 			}),
 		},
 	}
 end
 
-local function photoMeta(photo)
-	return {
-		title = photo:getFormattedMetadata("title"),
-		fileName = photo:getFormattedMetadata("fileName"),
-		caption = photo:getFormattedMetadata("caption"),
-		uuid = photo:getRawMetadata("uuid"),
-	}
-end
-
-local function updateMetadata(api, rendition, meta)
-	local _, e = api:call("flickr.photos.setMeta", {
-		photo_id = rendition.publishedPhotoId,
-		title = PhotoFields.title(meta),
-		description = meta.caption or "",
-	}, "POST")
-	return e
-end
-
-local function fmt(seconds)
-	return string.format("%.3f", seconds)
-end
-
--- Pre-pass over the renditions (does not start rendering). Skips the photos we do not let
--- Lightroom render and returns the photos that still need uploading, in publish order.
-local function prePass(session, renderMode, skipStrategy)
-	local toRender = {}
-	local t0 = LrDate.currentTime()
+-- Pre-pass (does not start rendering): plan every rendition and skip all Lightroom renders.
+local function planBatch(session, renderSettings)
+	local entries = {}
 	local ok, err = LrTasks.pcall(function()
 		for _, r in session:renditions() do
-			local published = r.publishedPhotoId ~= nil
-			if renderMode == "own" or (skipStrategy == "skipFirstPass" and published) then
-				r:skipRender()
-				spike("skipRender", { id = r.publishedPhotoId })
-			end
-			if renderMode == "own" and not published then
-				toRender[#toRender + 1] = r.photo
-			end
+			r:skipRender()
+			entries[#entries + 1] = { photo = r.photo, publishedId = r.publishedPhotoId }
+		end
+		local photos = {}
+		for i, entry in ipairs(entries) do
+			photos[i] = entry.photo
+		end
+		local state = CatalogState.load(photos)
+		for _, entry in ipairs(entries) do
+			local fields = state[entry.photo]
+			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo))
+			entry.current = {
+				image = Fingerprint.image(CatalogState.developSettings(entry.photo), renderSettings),
+				metadata = Fingerprint.metadata(entry.fields),
+			}
+			entry.flickrId = fields.flickrId
+			entry.storedMetadata = fields.metadataFingerprint
+			entry.action = PublishPlanner.plan({
+				publishedId = entry.publishedId,
+				flickrId = fields.flickrId,
+				stored = { image = fields.imageFingerprint, metadata = fields.metadataFingerprint },
+				current = entry.current,
+			})
 		end
 	end)
-	spike("skipPassDone", { ok = ok, err = err, seconds = fmt(LrDate.currentTime() - t0), toRender = #toRender })
 	if not ok then
-		LrErrors.throwUserError("Flickr: pre-pass failed: " .. tostring(err))
+		LrErrors.throwUserError("Flickr: planning failed: " .. tostring(err))
 	end
-	return toRender
+	return entries
 end
 
-local function ownRenderQueue(settings, toRender)
-	local base, method, count = PhotoRenderer.copySettings(settings)
-	spike("copySettings", { method = method, count = count })
-	if not base then
-		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
+-- Replace needs Pro. Without it, ask once for the whole batch.
+local function resolveReplaces(api, user, entries, counts)
+	if not counts.replace then
+		return
+	end
+	local pro, e = api:isPro(user.id)
+	if pro == nil then
+		LrErrors.throwUserError("Flickr: could not check Pro status: " .. FlickrResponse.describe(e))
+	end
+	event("proCheck", { pro = pro, replace = counts.replace })
+	if pro then
+		return
+	end
+	local answer = LrDialogs.confirm(
+		string.format("%d photo(s) have image changes, but replacing images needs Flickr Pro.", counts.replace),
+		"Update metadata only: the old image stays on Flickr and the photos are marked as outdated.\n"
+			.. "Leave as modified: nothing is sent for these photos; they stay in “Modified Photos to Re-Publish”.",
+		"Update metadata only",
+		"Leave as modified"
+	)
+	for _, entry in ipairs(entries) do
+		if entry.action == "replace" then
+			entry.action = (answer == "ok") and "metadataOutdated" or "leaveModified"
+		end
+	end
+end
+
+local function renderQueue(entries, renderSettings)
+	local toRender = {}
+	for _, entry in ipairs(entries) do
+		if PublishPlanner.RENDERS[entry.action] then
+			toRender[#toRender + 1] = entry.photo
+		end
 	end
 	local folder = PhotoRenderer.makeFolder()
-	local start, await = PhotoRenderer.renderer(base, folder)
-	local ahead = math.max(0, math.floor(tonumber(settings.spikeAhead) or 2))
-	return RenderQueue.new(toRender, ahead, start, await), folder
+	local start, await = PhotoRenderer.renderer(renderSettings, folder)
+	return RenderQueue.new(toRender, RENDER_AHEAD, start, await), folder
 end
 
-local function uploadOne(api, user, rendition, path, meta, i)
-	local tu = LrDate.currentTime()
-	local photoId, err = api:upload(path, PhotoFields.uploadFields(meta))
-	spike("uploaded", { i = i, id = photoId, seconds = fmt(LrDate.currentTime() - tu), err = err and err.message })
-	if photoId then
-		rendition:recordPublishedPhotoId(photoId)
-		rendition:recordPublishedPhotoUrl(PhotoFields.photoUrl(user.id, photoId))
-	else
-		log:error("upload failed: " .. FlickrResponse.describe(err))
-		rendition:uploadFailed(FlickrResponse.describe(err))
+-- Executes one planned action. Returns remoteId on success, or nil, message.
+local function execute(api, entry, path)
+	local action = entry.action
+	local remoteId = entry.publishedId or entry.flickrId
+	local e
+
+	if action == "upload" then
+		remoteId, e = api:upload(path, PhotoFields.uploadFields(entry.fields))
+	elseif action == "replace" then
+		local _, replaceErr = api:replace(path, remoteId)
+		e = replaceErr
 	end
+	if e then
+		return nil, FlickrResponse.describe(e)
+	end
+
+	local needsMeta = action == "metadata"
+		or action == "adopt"
+		or action == "metadataOutdated"
+		or ((action == "replace" or action == "relink") and entry.storedMetadata ~= entry.current.metadata)
+	if needsMeta then
+		local _, metaErr = api:call(
+			"flickr.photos.setMeta",
+			{ photo_id = remoteId, title = entry.fields.title, description = entry.fields.description },
+			"POST"
+		)
+		if metaErr then
+			return nil, FlickrResponse.describe(metaErr)
+		end
+	end
+	return remoteId
 end
 
 function provider.processRenderedPhotos(_, exportContext)
@@ -255,6 +254,7 @@ function provider.processRenderedPhotos(_, exportContext)
 	local session = exportContext.exportSession
 	local deps = AppDeps()
 	local creds = CredentialStore.load()
+	local dryRun = settings.dryRun == true
 
 	local user, e = AccountGuard.verify(deps, creds, settings.lockedNsid)
 	if not user then
@@ -262,81 +262,77 @@ function provider.processRenderedPhotos(_, exportContext)
 	end
 	local api = FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
 
-	local n = session:countRenditions()
-	local own = settings.spikeRenderMode == "own"
-	spike("start", {
-		n = n,
-		mode = settings.spikeUploadMode,
-		skip = settings.spikeSkipStrategy,
-		render = settings.spikeRenderMode,
-		ahead = settings.spikeAhead,
-		delay = settings.spikeDelay,
-		deleteAfter = settings.spikeDeleteAfterUpload,
-	})
-
-	local toRender = prePass(session, settings.spikeRenderMode, settings.spikeSkipStrategy)
-	local queue, folder
-	if own then
-		queue, folder = ownRenderQueue(settings, toRender)
+	local renderSettings = PhotoRenderer.copySettings(settings)
+	if not renderSettings then
+		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
 	end
 
-	exportContext:configureProgress({ title = string.format("Publishing %d photo(s) to Flickr", n) })
+	local entries = planBatch(session, renderSettings)
+	local actions, byPhoto = {}, {}
+	for i, entry in ipairs(entries) do
+		actions[i] = entry.action
+		byPhoto[entry.photo] = entry
+	end
+	local counts = PublishPlanner.summarize(actions)
+	event("plan", {
+		n = #entries,
+		dryRun = dryRun,
+		upload = counts.upload,
+		relink = counts.relink,
+		replace = counts.replace,
+		metadata = counts.metadata,
+		adopt = counts.adopt,
+		noop = counts.noop,
+	})
+	resolveReplaces(api, user, entries, counts)
 
-	local i = 0
+	local queue, folder = renderQueue(entries, renderSettings)
+	exportContext:configureProgress({ title = string.format("Publishing %d photo(s) to Flickr", #entries) })
+
 	for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
-		i = i + 1
-		local t0 = LrDate.currentTime()
-		local ok, pathOrMsg = rendition:waitForRender()
-		local path = rendition.destinationPath
+		rendition:waitForRender() -- returns immediately: all renditions were skipped
+		local entry = byPhoto[rendition.photo]
+		local path, ok, msg = nil, true, nil
 
-		if own and not rendition.publishedPhotoId then
+		if PublishPlanner.RENDERS[entry.action] then
 			local photo
-			photo, ok, pathOrMsg = queue:take()
-			path = ok and pathOrMsg or nil
+			photo, ok, msg = queue:take()
 			if photo ~= rendition.photo then
-				spike("orderMismatch", { i = i })
-				ok, pathOrMsg, path = false, "render order mismatch", nil
+				ok, msg = false, "render order mismatch"
 			end
+			path = ok and msg or nil
 		end
 
-		local count, bytes = dirStats(own and folder or (path and LrPathUtils.parent(path)))
-		spike("rendered", {
-			i = i,
-			waited = fmt(LrDate.currentTime() - t0),
-			ok = ok,
-			skipped = rendition.wasSkipped,
-			exists = path and LrFileUtils.exists(path) or false,
-			filesInDir = count,
-			bytesInDir = bytes,
-			inFlight = queue and queue:inFlight(),
-			published = rendition.publishedPhotoId,
-		})
-
-		local meta = photoMeta(rendition.photo)
 		if not ok then
-			rendition:uploadFailed(tostring(pathOrMsg))
-		elseif rendition.publishedPhotoId then
-			local err = updateMetadata(api, rendition, meta)
-			if err then
-				rendition:uploadFailed(FlickrResponse.describe(err))
-			else
-				rendition:recordPublishedPhotoId(rendition.publishedPhotoId)
-			end
-			spike("metadataOnly", { i = i, id = rendition.publishedPhotoId, err = err and err.message })
-		elseif settings.spikeUploadMode == "flickr" then
-			uploadOne(api, user, rendition, path, meta, i)
+			rendition:uploadFailed(tostring(msg))
+		elseif entry.action == "leaveModified" then
+			rendition:uploadFailed("Image changed; replacing needs Flickr Pro.")
+		elseif dryRun then
+			event("dryRun", { action = entry.action, id = entry.publishedId or entry.flickrId })
 		else
-			LrTasks.sleep(tonumber(settings.spikeDelay) or 0)
+			local remoteId, err = execute(api, entry, path)
+			event(entry.action, { id = remoteId, err = err })
+			if remoteId then
+				rendition:recordPublishedPhotoId(remoteId)
+				rendition:recordPublishedPhotoUrl(PhotoFields.photoUrl(user.id, remoteId))
+				CatalogState.save(rendition.photo, {
+					flickrId = remoteId,
+					flickrState = entry.action == "metadataOutdated" and "imageOutdated" or "published",
+					imageFingerprint = entry.current.image,
+					metadataFingerprint = entry.current.metadata,
+				})
+			else
+				log:error("publish failed: " .. tostring(err))
+				rendition:uploadFailed(err)
+			end
 		end
 
-		if (own or settings.spikeDeleteAfterUpload) and path and LrFileUtils.exists(path) then
+		if path and LrFileUtils.exists(path) then
 			LrFileUtils.delete(path)
 		end
 	end
-	if folder then
-		LrFileUtils.delete(folder)
-	end
-	spike("end", { i = i })
+	LrFileUtils.delete(folder)
+	event("end", { n = #entries })
 end
 
 return provider

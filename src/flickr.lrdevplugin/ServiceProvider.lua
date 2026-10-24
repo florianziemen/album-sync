@@ -988,9 +988,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		local path, ok, msg = nil, true, nil
 
 		if PublishPlanner.RENDERS[entry.action] then
-			local photo
-			photo, ok, msg = queue:take()
-			if photo ~= rendition.photo then
+			local item
+			item, ok, msg = queue:take()
+			if not item or item.photo ~= rendition.photo then
 				ok, msg = false, "render order mismatch"
 			end
 			path = ok and msg or nil

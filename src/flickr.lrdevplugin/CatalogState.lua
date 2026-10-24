@@ -52,6 +52,38 @@ function M.developSettings(photo)
 	return photo:getDevelopSettings()
 end
 
+--[[
+Flickr ids that LR recorded for `photos` in any published collection of this plugin.
+Backfills photos published before the flickrId field existed, so they are relinked instead of
+uploaded again. Returns { [photo.localIdentifier] = remoteId }.
+]]
+function M.remoteIdsFromCollections(photos)
+	local result, byCollection = {}, {}
+	for _, photo in ipairs(photos) do
+		for _, c in ipairs(photo:getContainedPublishedCollections()) do
+			if c:getService():getPluginId() == _PLUGIN.id then
+				local map = byCollection[c.localIdentifier]
+				if not map then
+					map = {}
+					for _, pp in ipairs(c:getPublishedPhotos()) do
+						local rid = pp:getRemoteId()
+						if rid then
+							map[pp:getPhoto().localIdentifier] = tostring(rid)
+						end
+					end
+					byCollection[c.localIdentifier] = map
+				end
+				local rid = map[photo.localIdentifier]
+				if rid then
+					result[photo.localIdentifier] = rid
+					break
+				end
+			end
+		end
+	end
+	return result
+end
+
 --- Remote id (album id) of a published collection by local id, or nil.
 function M.collectionRemoteId(localCollectionId)
 	if not localCollectionId then

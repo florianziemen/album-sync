@@ -144,6 +144,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **Renaming a collection** calls `editMeta` and keeps the album description, which is read first because `editMeta` may clear an omitted description.
 - **Deleting a collection** keeps the album and its photos on Flickr. A notice tells the user to delete them on the Flickr website if wanted.
 - **Sort order:** `supportsCustomSortOrder`. After each publish, LR's order is pushed with `photosets.reorderPhotos`.
+- **Backfill:** a photo without `flickrId` that LR has already published in another collection of this service (for example from before the field existed) uses that remote ID and is relinked, not uploaded. Without this, a duplicate was uploaded (observed 2026-10-24).
 - **Re-upload** (non-Pro image change): the new photo is added to every album of the old one (`photos.getAllContexts`). With "keep", the old photo is removed from those albums. Other LR collections containing the photo are retargeted to the new ID (`addPhotoByRemoteId`).
 
 ## 7. Albums and legacy matching

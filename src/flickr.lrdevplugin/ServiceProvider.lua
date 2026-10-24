@@ -225,8 +225,20 @@ local function planBatch(session, renderSettings)
 			photos[i] = entry.photo
 		end
 		local state = CatalogState.load(photos)
+		local unknown = {}
+		for _, entry in ipairs(entries) do
+			if not state[entry.photo].flickrId and not entry.publishedId then
+				unknown[#unknown + 1] = entry.photo
+			end
+		end
+		local backfill = #unknown > 0 and CatalogState.remoteIdsFromCollections(unknown) or {}
 		for _, entry in ipairs(entries) do
 			local fields = state[entry.photo]
+			local backfilled = backfill[entry.photo.localIdentifier]
+			if backfilled then
+				fields.flickrId = backfilled
+				event("backfill", { photo = entry.photo.localIdentifier, id = backfilled })
+			end
 			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo))
 			entry.current = {
 				image = Fingerprint.image(CatalogState.developSettings(entry.photo), renderSettings),

@@ -3,7 +3,7 @@ Builds the dependency table that core modules expect, backed by Lightroom APIs.
 ]]
 
 local LrDate = import("LrDate")
-local LrTransport = require("LrTransport")
+local HttpTransport = require("HttpTransport")
 
 -- LrDate counts from 2001-01-01 UTC.
 local UNIX_OFFSET = 978307200
@@ -16,8 +16,8 @@ return function()
 		seeded = true
 	end
 	return {
-		transport = LrTransport.request,
-		postMultipart = LrTransport.postMultipart,
+		transport = HttpTransport.request,
+		postMultipart = HttpTransport.postMultipart,
 		now = function()
 			return LrDate.currentTime() + UNIX_OFFSET
 		end,

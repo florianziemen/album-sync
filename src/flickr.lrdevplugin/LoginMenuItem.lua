@@ -16,13 +16,13 @@ local LrView = import("LrView")
 local CredentialStore = require("CredentialStore")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
-local LrDeps = require("LrDeps")
+local AppDeps = require("AppDeps")
 local Sha1 = require("Sha1")
 
 local log = LrLogger("lrflickr")
 log:enable("logfile")
 
-local deps = LrDeps
+local deps = AppDeps
 local describe = FlickrResponse.describe
 
 -- Spike: does the built-in LrDigest offer HMAC-SHA1? Never fails, only reports.

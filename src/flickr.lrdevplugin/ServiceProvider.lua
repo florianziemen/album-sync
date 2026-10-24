@@ -21,8 +21,8 @@ local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
-local LrDeps = require("LrDeps")
-local LrRender = require("LrRender")
+local AppDeps = require("AppDeps")
+local PhotoRenderer = require("PhotoRenderer")
 local PhotoFields = require("PhotoFields")
 local RenderQueue = require("RenderQueue")
 
@@ -99,7 +99,7 @@ local function lockToCurrentLogin(propertyTable)
 			propertyTable.lockStatus = "Not logged in. Use File > Plug-in Extras > Flickr: Log in."
 			return
 		end
-		local user, e = FlickrAuth.new(LrDeps(), creds)
+		local user, e = FlickrAuth.new(AppDeps(), creds)
 			:testLogin({ token = creds.token, tokenSecret = creds.tokenSecret })
 		if not user then
 			propertyTable.lockStatus = FlickrResponse.describe(e)
@@ -226,13 +226,13 @@ local function prePass(session, renderMode, skipStrategy)
 end
 
 local function ownRenderQueue(settings, toRender)
-	local base, method, count = LrRender.copySettings(settings)
+	local base, method, count = PhotoRenderer.copySettings(settings)
 	spike("copySettings", { method = method, count = count })
 	if not base then
 		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
 	end
-	local folder = LrRender.makeFolder()
-	local start, await = LrRender.renderer(base, folder)
+	local folder = PhotoRenderer.makeFolder()
+	local start, await = PhotoRenderer.renderer(base, folder)
 	local ahead = math.max(0, math.floor(tonumber(settings.spikeAhead) or 2))
 	return RenderQueue.new(toRender, ahead, start, await), folder
 end
@@ -253,7 +253,7 @@ end
 function provider.processRenderedPhotos(_, exportContext)
 	local settings = exportContext.propertyTable
 	local session = exportContext.exportSession
-	local deps = LrDeps()
+	local deps = AppDeps()
 	local creds = CredentialStore.load()
 
 	local user, e = AccountGuard.verify(deps, creds, settings.lockedNsid)

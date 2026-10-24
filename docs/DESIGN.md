@@ -52,7 +52,7 @@ Rules for this project:
 
 Pure-Lua core modules have no `Lr*` imports and are unit-tested with busted. LR adapters are thin and injected into the core.
 
-The plugin folder is flat, because Lightroom's `require` loads modules from the plugin root. Files prefixed `Lr` are adapters that import `Lr*`. All other modules are pure core.
+The plugin folder is flat, because Lightroom's `require` loads modules from the plugin root. Adapters (`HttpTransport`, `AppDeps`, `PhotoRenderer`, `CredentialStore`, `ServiceProvider`, `*MenuItem`) call `import`. All other modules are pure core. Own modules must never be named `Lr*`, because Lightroom resolves such names as its own toolkit scripts. `LrRender` failed to load ("Could not load toolkit script").
 
 ```
 src/flickr.lrdevplugin/
@@ -61,7 +61,7 @@ src/flickr.lrdevplugin/
   OAuth.lua                 OAuth 1.0a signing                   (core, done)
   FlickrResponse.lua        response parsing, error classes      (core, done)
   FlickrAuth.lua            oob login flow                       (core, done)
-  LrTransport.lua           LrHttp → transport interface         (adapter, done)
+  HttpTransport.lua         LrHttp → transport interface         (adapter, done)
   CredentialStore.lua       key/secret/tokens in LrPasswords     (adapter, done)
   LoginMenuItem.lua         login prototype UI                   (adapter, done)
   ServiceProvider.lua       publish hooks (thin, delegates)

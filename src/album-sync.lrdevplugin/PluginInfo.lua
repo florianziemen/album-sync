@@ -31,11 +31,12 @@ return {
 					title = "This product uses the Flickr API but is not endorsed or certified by SmugMug, Inc.",
 					fill_horizontal = 1,
 				}),
+				-- The Plug-in Manager does not wrap lines: keep each line short.
 				f:static_text({
-					title = "Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugMug, Inc. "
-						.. "This project is not affiliated with either.",
+					title = "Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugMug, Inc.",
 					fill_horizontal = 1,
 				}),
+				f:static_text({ title = "This project is not affiliated with either.", fill_horizontal = 1 }),
 				f:static_text({
 					title = "MIT License. Log file: album-sync.log in Lightroom's logs folder.",
 					fill_horizontal = 1,

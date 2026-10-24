@@ -108,6 +108,26 @@ Per batch, in `processRenderedPhotos`:
 | Found on Flickr | Link it; do not re-upload. |
 | Not found | Drop the entry; the photo is uploaded normally. |
 
+## 5a. Robust upload (implemented)
+
+- **Async upload** (`Uploader.lua`): `async=1` returns a ticket, and `checkTickets` is polled with backoff (1 s up to 15 s, at most 300 s).
+  - A ticket still processing at timeout is **not** re-uploaded. The journal keeps it, and the next publish links it; until then the photo is held back (`waitPending`).
+  - Complete=2 (Flickr could not process the file) is a permanent failure.
+- **Journal** (`Journal.lua`, `JournalFile.lua`): one JSON file per catalog in LR's app-support folder (`lrflickr/journal-<catalog hash>.json`), written atomically.
+  - An entry (keyed by photo uuid, holding title and start time) is written *before* sending, then gets the ticket and later the photo ID. It is closed only after the ID is stored in the catalog.
+  - At the start of every publish, open entries are reconciled: by photo ID, by ticket, or else by searching own uploads since the attempt started. Found photos get `flickrId` and are then relinked by the planner. Photos not found are dropped. Several candidates mean `ambiguous`: the photo is held back and the candidates are logged.
+- **Duplicate-safe retries:**
+  - Transient failures are retried with exponential backoff and jitter (5 attempts, base 2 s, cap 60 s, honouring code 14's wait hint).
+  - Before each upload retry, own recent uploads (`people.getPhotos`, `min_upload_date`) are searched by title: up to 3 checks, 5 s and 10 s apart. Exactly one match: use it. Several: stop. None: upload again.
+  - IDs already claimed in this run are excluded, because virtual copies share titles.
+  - Idempotent REST calls retry automatically. `photosets.create` never does.
+- **Rate limit:** a token bucket shared by all calls of a run, at 1 call/s with bursts of 10 (Flickr: 3600/h per key).
+- **Parallel uploads** (setting 1–4, default 3; `TaskPool.lua`): worker tasks render-wait, upload and poll tickets. Everything touching the catalog, the rendition or album creation runs on the publish task, one result at a time. Render look-ahead equals the number of workers.
+- **Fault injection** (Development section, fires once per run):
+  - network error before sending → retry;
+  - response lost after upload → found by search, no duplicate;
+  - crash after upload, before saving → the next publish reconciles via the journal and relinks.
+
 ## 6. Change detection (fingerprints)
 
 These are stored per photo after each successful publish.

@@ -28,11 +28,16 @@ local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
+local Journal = require("Journal")
+local JournalFile = require("JournalFile")
 local Fingerprint = require("Fingerprint")
 local PhotoFields = require("PhotoFields")
 local PhotoRenderer = require("PhotoRenderer")
 local PublishPlanner = require("PublishPlanner")
+local RateLimiter = require("RateLimiter")
 local RenderQueue = require("RenderQueue")
+local TaskPool = require("TaskPool")
+local Uploader = require("Uploader")
 
 local RENDER_AHEAD = 2
 
@@ -66,6 +71,8 @@ local provider = {
 		{ key = "lockedNsid", default = "" },
 		{ key = "lockedUsername", default = "" },
 		{ key = "dryRun", default = false },
+		{ key = "parallelUploads", default = 3 },
+		{ key = "faultMode", default = "none" },
 	},
 }
 
@@ -214,11 +221,38 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 		},
 		{
+			title = "Upload",
+			f:row({
+				f:static_text({ title = "Parallel uploads:", width = 110 }),
+				f:popup_menu({
+					value = bind("parallelUploads"),
+					items = {
+						{ title = "1", value = 1 },
+						{ title = "2", value = 2 },
+						{ title = "3", value = 3 },
+						{ title = "4", value = 4 },
+					},
+				}),
+			}),
+		},
+		{
 			title = "Development",
 			f:row({
 				f:checkbox({
 					title = "Dry run: plan and render, but make no changes on Flickr or in the catalog",
 					value = bind("dryRun"),
+				}),
+			}),
+			f:row({
+				f:static_text({ title = "Inject fault:", width = 110 }),
+				f:popup_menu({
+					value = bind("faultMode"),
+					items = {
+						{ title = "None", value = "none" },
+						{ title = "Network error before sending (once)", value = "beforeSend" },
+						{ title = "Response lost after upload (once)", value = "afterSend" },
+						{ title = "Crash after upload, before saving (once)", value = "crashAfterUpload" },
+					},
 				}),
 			}),
 		},
@@ -231,7 +265,11 @@ local function planBatch(session, renderSettings)
 	local ok, err = LrTasks.pcall(function()
 		for _, r in session:renditions() do
 			r:skipRender()
-			entries[#entries + 1] = { photo = r.photo, publishedId = r.publishedPhotoId }
+			entries[#entries + 1] = {
+				photo = r.photo,
+				publishedId = r.publishedPhotoId,
+				uuid = CatalogState.uuid(r.photo),
+			}
 		end
 		local photos = {}
 		for i, entry in ipairs(entries) do
@@ -343,7 +381,7 @@ local function resolveReplaces(functionContext, api, user, entries, counts)
 	end
 end
 
-local function renderQueue(entries, renderSettings)
+local function renderQueue(entries, renderSettings, ahead)
 	local toRender = {}
 	for _, entry in ipairs(entries) do
 		if PublishPlanner.RENDERS[entry.action] then
@@ -352,19 +390,57 @@ local function renderQueue(entries, renderSettings)
 	end
 	local folder = PhotoRenderer.makeFolder()
 	local start, await = PhotoRenderer.renderer(renderSettings, folder)
-	return RenderQueue.new(toRender, RENDER_AHEAD, start, await), folder
+	return RenderQueue.new(toRender, ahead or RENDER_AHEAD, start, await), folder
 end
 
--- Executes one planned action. Returns remoteId on success, or nil, message.
+-- Faults for testing recovery (Development section). Each fires once per run.
+local function faultInjector(mode)
+	if not mode or mode == "none" then
+		return nil
+	end
+	local fired = false
+	local function once()
+		if fired then
+			return false
+		end
+		fired = true
+		return true
+	end
+	return {
+		upload = function(stage)
+			if mode == stage and once() then
+				event("faultInjected", { mode = mode })
+				local where = stage == "beforeSend" and "network error before sending" or "response lost after upload"
+				return { class = "transient", message = "injected fault: " .. where }
+			end
+		end,
+		crash = function()
+			if mode == "crashAfterUpload" and once() then
+				event("faultInjected", { mode = mode })
+				return true
+			end
+			return false
+		end,
+	}
+end
+
+-- Flickr side of one planned action. Uploads run in worker tasks; everything that touches the
+-- catalog or the rendition happens later in finish(). Returns remoteId or nil, message.
 -- For re-uploads, entry.oldId is set and album membership moves to the new photo.
-local function execute(api, entry, path)
+local function execute(ctx, entry, path)
+	local api = ctx.api
 	local action = entry.action
 	local remoteId = entry.publishedId or entry.flickrId
 	local e
 
 	if action == "upload" or action == "reuploadKeep" or action == "reuploadDelete" then
 		local oldId = remoteId
-		remoteId, e = api:upload(path, PhotoFields.uploadFields(entry.fields))
+		remoteId, e = ctx.uploader:upload(
+			entry.uuid,
+			path,
+			PhotoFields.uploadFields(entry.fields),
+			{ fault = ctx.faults and ctx.faults.upload }
+		)
 		if remoteId and oldId then
 			entry.oldId = oldId
 			local keep = action == "reuploadKeep"
@@ -386,6 +462,9 @@ local function execute(api, entry, path)
 		e = replaceErr
 	end
 	if e then
+		if e.class == "pending" then
+			return nil, e.message .. " It will be linked on the next publish."
+		end
 		return nil, FlickrResponse.describe(e)
 	end
 
@@ -442,6 +521,43 @@ local function fail(rendition, entry, message)
 	rendition:uploadFailed(tostring(message))
 end
 
+-- Link photos whose upload finished (or was lost) in an earlier, interrupted run.
+-- Returns sets of uuids that must not be uploaded again in this run: pending, ambiguous.
+local function reconcileJournal(uploader, journal)
+	local blocked = { pending = {}, ambiguous = {} }
+	if #journal:openEntries() == 0 then
+		return blocked
+	end
+	local r = uploader:reconcile()
+	local linked = 0
+	for uuid, photoId in pairs(r.linked) do
+		local photo = CatalogState.photoByUuid(uuid)
+		if photo then
+			CatalogState.save(photo, { flickrId = photoId, flickrState = "published" })
+		end
+		journal:close(uuid)
+		linked = linked + 1
+		event("reconcileLinked", { uuid = uuid, id = photoId, inCatalog = photo ~= nil })
+	end
+	for _, uuid in ipairs(r.pending) do
+		blocked.pending[uuid] = true
+	end
+	local ambiguous = 0
+	for uuid, ids in pairs(r.ambiguous) do
+		blocked.ambiguous[uuid] = ids
+		ambiguous = ambiguous + 1
+		log:error(
+			string.format("journal: upload of %s is ambiguous, candidates on Flickr: %s", uuid, table.concat(ids, ","))
+		)
+	end
+	event("reconcile", { linked = linked, pending = #r.pending, dropped = #r.dropped, ambiguous = ambiguous })
+	return blocked
+end
+
+local function clampParallel(v)
+	return math.max(1, math.min(4, math.floor(tonumber(v) or 3)))
+end
+
 function provider.processRenderedPhotos(functionContext, exportContext)
 	functionContext:addFailureHandler(function(_, message)
 		log:error("publish run aborted: " .. tostring(message))
@@ -449,6 +565,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local settings = exportContext.propertyTable
 	local session = exportContext.exportSession
 	local deps = AppDeps()
+	deps.limiter = RateLimiter.new(deps)
 	local creds = CredentialStore.load()
 	local dryRun = settings.dryRun == true
 
@@ -458,6 +575,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	end
 	local api = FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
 
+	local journal = Journal.new(JournalFile.storage())
+	if journal.corrupt then
+		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
+	end
+	local uploader = Uploader.new(deps, api, journal)
+	local blocked = dryRun and { pending = {}, ambiguous = {} } or reconcileJournal(uploader, journal)
+
 	local renderSettings = PhotoRenderer.copySettings(settings)
 	if not renderSettings then
 		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
@@ -466,19 +590,30 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local entries = planBatch(session, renderSettings)
 	local actions, byPhoto = {}, {}
 	for i, entry in ipairs(entries) do
+		if entry.action == "upload" and blocked.pending[entry.uuid] then
+			entry.action = "waitPending"
+		elseif entry.action == "upload" and blocked.ambiguous[entry.uuid] then
+			entry.action = "ambiguous"
+			entry.candidates = blocked.ambiguous[entry.uuid]
+		end
 		actions[i] = entry.action
 		byPhoto[entry.photo] = entry
 	end
 	local counts = PublishPlanner.summarize(actions)
+	local parallel = clampParallel(settings.parallelUploads)
 	event("plan", {
 		n = #entries,
 		dryRun = dryRun,
+		parallel = parallel,
+		fault = settings.faultMode,
 		upload = counts.upload,
 		relink = counts.relink,
 		replace = counts.replace,
 		metadata = counts.metadata,
 		adopt = counts.adopt,
 		noop = counts.noop,
+		waitPending = counts.waitPending,
+		ambiguous = counts.ambiguous,
 	})
 	resolveReplaces(functionContext, api, user, entries, counts)
 
@@ -487,7 +622,77 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local album = (not info.isDefaultCollection) and { id = info.remoteId, title = info.name } or nil
 	event("collection", { name = info.name, album = album and album.id, default = info.isDefaultCollection })
 
-	local queue, folder = renderQueue(entries, renderSettings)
+	local ctx = {
+		api = api,
+		uploader = uploader,
+		journal = journal,
+		user = user,
+		session = session,
+		album = album,
+		faults = (not dryRun) and faultInjector(settings.faultMode) or nil,
+		publishedCollection = exportContext.publishedCollection,
+	}
+
+	-- Lightroom side of a finished action; always on this (the publish) task.
+	local function finish(rendition, entry, remoteId, err)
+		if not remoteId then
+			fail(rendition, entry, err)
+			return
+		end
+		if entry.action == "upload" and ctx.faults and ctx.faults.crash() then
+			error("injected fault: crash after upload, before saving (photo " .. tostring(remoteId) .. ")")
+		end
+		-- Persist first: if anything below fails, the next publish relinks instead of re-uploading.
+		CatalogState.save(rendition.photo, {
+			flickrId = remoteId,
+			flickrState = entry.action == "metadataOutdated" and "imageOutdated" or "published",
+			imageFingerprint = entry.current.image,
+			metadataFingerprint = entry.current.metadata,
+		})
+		journal:close(entry.uuid)
+		local url = PhotoFields.photoUrl(user.id, remoteId)
+		if entry.oldId then
+			local n, retargetErr =
+				CatalogState.retarget(rendition.photo, entry.oldId, remoteId, url, ctx.publishedCollection)
+			event("retarget", { old = entry.oldId, new = remoteId, collections = n, err = retargetErr })
+		end
+		local inAlbum, albumErr = ensureInAlbum(api, user, session, album, entry, remoteId)
+		if inAlbum then
+			rendition:recordPublishedPhotoId(remoteId)
+			rendition:recordPublishedPhotoUrl(url)
+		else
+			fail(rendition, entry, albumErr)
+		end
+	end
+
+	local function removeFile(path)
+		if path and LrFileUtils.exists(path) then
+			LrFileUtils.delete(path)
+		end
+	end
+
+	local pool = TaskPool.new(parallel, {
+		spawn = function(fn)
+			LrTasks.startAsyncTask(fn, "lrflickr upload")
+		end,
+		sleep = LrTasks.sleep,
+		pcall = LrTasks.pcall,
+	})
+	local function finishResults(results)
+		for _, r in ipairs(results) do
+			if r.error then
+				fail(r.context.rendition, r.context.entry, "upload task failed: " .. r.error)
+				removeFile(r.context.path)
+			else
+				event(r.entry.action, { id = r.remoteId, err = r.err })
+				finish(r.rendition, r.entry, r.remoteId, r.err)
+				removeFile(r.path)
+			end
+		end
+	end
+
+	-- Render look-ahead covers all workers plus the next photo.
+	local queue, folder = renderQueue(entries, renderSettings, parallel)
 	exportContext:configureProgress({ title = string.format("Publishing %d photo(s) to Flickr", #entries) })
 
 	for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
@@ -508,46 +713,37 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			fail(rendition, entry, "render failed: " .. tostring(msg))
 		elseif entry.action == "leaveModified" then
 			fail(rendition, entry, "Image changed; replacing needs Flickr Pro.")
+		elseif entry.action == "waitPending" then
+			fail(
+				rendition,
+				entry,
+				"An earlier upload of this photo is still being processed by Flickr; publish again later."
+			)
+		elseif entry.action == "ambiguous" then
+			fail(
+				rendition,
+				entry,
+				"An earlier upload may have reached Flickr more than once (candidates: "
+					.. table.concat(entry.candidates, ", ")
+					.. "). Check on Flickr; see the log."
+			)
 		elseif dryRun then
 			event("dryRun", { action = entry.action, id = entry.publishedId or entry.flickrId })
+			removeFile(path)
+		elseif PublishPlanner.RENDERS[entry.action] then
+			local context = { rendition = rendition, entry = entry, path = path }
+			pool:submit(context, function()
+				local remoteId, err = execute(ctx, entry, path)
+				return { rendition = rendition, entry = entry, path = path, remoteId = remoteId, err = err }
+			end)
 		else
-			local remoteId, err = execute(api, entry, path)
+			local remoteId, err = execute(ctx, entry, nil)
 			event(entry.action, { id = remoteId, err = err })
-			if remoteId then
-				-- Persist first: if anything below fails, the next publish relinks instead of re-uploading.
-				CatalogState.save(rendition.photo, {
-					flickrId = remoteId,
-					flickrState = entry.action == "metadataOutdated" and "imageOutdated" or "published",
-					imageFingerprint = entry.current.image,
-					metadataFingerprint = entry.current.metadata,
-				})
-				local url = PhotoFields.photoUrl(user.id, remoteId)
-				if entry.oldId then
-					local n, retargetErr = CatalogState.retarget(
-						rendition.photo,
-						entry.oldId,
-						remoteId,
-						url,
-						exportContext.publishedCollection
-					)
-					event("retarget", { old = entry.oldId, new = remoteId, collections = n, err = retargetErr })
-				end
-				local inAlbum, albumErr = ensureInAlbum(api, user, session, album, entry, remoteId)
-				if inAlbum then
-					rendition:recordPublishedPhotoId(remoteId)
-					rendition:recordPublishedPhotoUrl(url)
-				else
-					fail(rendition, entry, albumErr)
-				end
-			else
-				fail(rendition, entry, err)
-			end
+			finish(rendition, entry, remoteId, err)
 		end
-
-		if path and LrFileUtils.exists(path) then
-			LrFileUtils.delete(path)
-		end
+		finishResults(pool:collect())
 	end
+	finishResults(pool:drain())
 	LrFileUtils.delete(folder)
 	event("end", { n = #entries })
 end

@@ -42,5 +42,7 @@ return function()
 			return attrs and attrs.fileSize
 		end,
 		pcall = LrTasks.pcall,
+		sleep = LrTasks.sleep,
+		random01 = math.random,
 	}
 end

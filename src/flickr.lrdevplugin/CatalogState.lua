@@ -48,6 +48,14 @@ function M.photoMeta(photo)
 	}
 end
 
+function M.uuid(photo)
+	return photo:getRawMetadata("uuid")
+end
+
+function M.photoByUuid(uuid)
+	return LrApplication.activeCatalog():findPhotoByUuid(uuid)
+end
+
 function M.developSettings(photo)
 	return photo:getDevelopSettings()
 end

@@ -134,6 +134,18 @@ A "force replace" menu action covers changes that are invisible to the fingerpri
 
 Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG (to tell virtual copies apart when matching via `getExif`).
 
+## 6a. Albums (implemented)
+
+- Each published collection is one Flickr album. The default collection "Photostream" has no album. Collection sets are a Lightroom-only grouping (for example by year); they can be nested and have no Flickr counterpart. Lightroom labels them "Album" and "Album Set".
+- **Creation:** an album is created lazily with the first photo published into it, which becomes its cover; the plugin never changes the cover afterwards. The ID and URL are stored with `recordRemoteCollectionId/Url`. An album deleted on Flickr is recreated on the next add (`addPhoto` returns code 1).
+- **Idempotent operations** (`AlbumSync.lua`): "already in set" (add, code 3) and "not in set" or "set not found" (remove, codes 3 and 1) count as success.
+- **Order of steps:** the plugin fields (`flickrId`) are saved *before* the album add. If the add fails, the photo is not recorded as published, and the next publish relinks it and retries the add without uploading again.
+- **Removing a photo from a collection** removes it from that album only.
+- **Renaming a collection** calls `editMeta` and keeps the album description, which is read first because `editMeta` may clear an omitted description.
+- **Deleting a collection** keeps the album and its photos on Flickr. A notice tells the user to delete them on the Flickr website if wanted.
+- **Sort order:** `supportsCustomSortOrder`. After each publish, LR's order is pushed with `photosets.reorderPhotos`.
+- **Re-upload** (non-Pro image change): the new photo is added to every album of the old one (`photos.getAllContexts`). With "keep", the old photo is removed from those albums. Other LR collections containing the photo are retargeted to the new ID (`addPhotoByRemoteId`).
+
 ## 7. Albums and legacy matching
 
 **Album scan.**

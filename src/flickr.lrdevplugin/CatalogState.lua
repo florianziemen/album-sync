@@ -4,6 +4,7 @@ inputs for fingerprints. Must run inside an LrTasks task.
 ]]
 
 local LrApplication = import("LrApplication")
+local LrTasks = import("LrTasks")
 
 local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerprint" }
 
@@ -49,6 +50,45 @@ end
 
 function M.developSettings(photo)
 	return photo:getDevelopSettings()
+end
+
+--- Remote id (album id) of a published collection by local id, or nil.
+function M.collectionRemoteId(localCollectionId)
+	if not localCollectionId then
+		return nil
+	end
+	local collection = LrApplication.activeCatalog():getPublishedCollectionByLocalIdentifier(localCollectionId)
+	return collection and collection:getRemoteId() or nil
+end
+
+--[[
+After a re-upload: point every other published collection of this plugin that contains the
+photo at the new Flickr id. `except` is the collection being published (LR records it itself).
+Returns number of collections updated, or nil, error message.
+]]
+function M.retarget(photo, oldId, newId, url, except)
+	local catalog = LrApplication.activeCatalog()
+	local exceptId = except and except.localIdentifier
+	local targets = {}
+	for _, c in ipairs(photo:getContainedPublishedCollections()) do
+		if c.localIdentifier ~= exceptId and c:getService():getPluginId() == _PLUGIN.id then
+			targets[#targets + 1] = c
+		end
+	end
+	if #targets == 0 then
+		return 0
+	end
+	local ok, err = LrTasks.pcall(function()
+		catalog:withWriteAccessDo("Update Flickr photo id", function()
+			for _, c in ipairs(targets) do
+				c:addPhotoByRemoteId(photo, newId, url, true)
+			end
+		end, { timeout = 30 })
+	end)
+	if not ok then
+		return nil, string.format("retarget %s -> %s failed: %s", tostring(oldId), tostring(newId), tostring(err))
+	end
+	return #targets
 end
 
 return M

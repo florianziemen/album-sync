@@ -5,7 +5,10 @@ Flickr publish service.
 - Per photo, PublishPlanner decides: upload / relink / replace / metadata / adopt / noop.
   Lightroom renders nothing; photos that need pixels are rendered just in time (RenderQueue).
 - Flickr ID and fingerprints are stored in plugin fields right after each successful call.
-- New photos are uploaded private and hidden from search. Nothing is ever deleted on Flickr.
+- Each published collection (except the default "Photostream") is a Flickr album, created
+  lazily with the first photo as cover. Collection sets are a Lightroom-only grouping.
+- New photos are uploaded private and hidden from search. Nothing is deleted on Flickr except
+  on the explicit "Re-upload, delete the old photo" choice; deleting a collection keeps the album.
 ]]
 
 local LrBinding = import("LrBinding")
@@ -18,6 +21,7 @@ local LrTasks = import("LrTasks")
 local LrView = import("LrView")
 
 local AccountGuard = require("AccountGuard")
+local AlbumSync = require("AlbumSync")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
@@ -55,6 +59,9 @@ local provider = {
 	hideSections = { "exportLocation", "video" },
 	allowFileFormats = { "JPEG" },
 	allowColorSpaces = { "sRGB" },
+	supportsCustomSortOrder = true,
+	titleForPublishedCollection = "Album",
+	titleForPublishedCollectionSet = "Album Set",
 	exportPresetFields = {
 		{ key = "lockedNsid", default = "" },
 		{ key = "lockedUsername", default = "" },
@@ -66,8 +73,7 @@ function provider.getCollectionBehaviorInfo()
 	return {
 		defaultCollectionName = "Photostream",
 		defaultCollectionCanBeDeleted = false,
-		canAddCollection = false,
-		maxCollectionSetDepth = 0,
+		canAddCollection = true,
 	}
 end
 
@@ -75,13 +81,77 @@ function provider.metadataThatTriggersRepublish()
 	return { default = false, title = true, caption = true, keywords = true, gps = true, dateCreated = true }
 end
 
--- Never delete on Flickr: only drop the photo from the published collection. The plugin
--- field flickrId stays, so re-adding the photo relinks instead of uploading a duplicate.
-function provider.deletePhotosFromPublishedCollection(_, arrayOfPhotoIds, deletedCallback)
-	for _, id in ipairs(arrayOfPhotoIds) do
-		event("removeFromCollectionOnly", { id = id })
-		deletedCallback(id)
+-- Verified account + API client for hooks outside processRenderedPhotos. Throws on failure.
+local function connect(publishSettings)
+	local deps = AppDeps()
+	local creds = CredentialStore.load()
+	local user, e = AccountGuard.verify(deps, creds, publishSettings.lockedNsid)
+	if not user then
+		LrErrors.throwUserError("Flickr: " .. FlickrResponse.describe(e))
 	end
+	return user, FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
+end
+
+-- Removing photos from a collection removes them from its album only; they stay on Flickr.
+-- The plugin field flickrId stays, so re-adding a photo relinks instead of uploading again.
+function provider.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localId)
+	local albumId = CatalogState.collectionRemoteId(localId)
+	if not albumId then
+		for _, id in ipairs(arrayOfPhotoIds) do
+			event("removeFromCollectionOnly", { id = id })
+			deletedCallback(id)
+		end
+		return
+	end
+	local _, api = connect(publishSettings)
+	for _, id in ipairs(arrayOfPhotoIds) do
+		local ok, e = AlbumSync.remove(api, albumId, id)
+		event("removeFromAlbum", { album = albumId, id = id, err = e and e.message })
+		if ok then
+			deletedCallback(id)
+		end
+	end
+end
+
+function provider.validatePublishedCollectionName(name)
+	if not name or name:match("^%s*$") then
+		return false, "Album names cannot be empty."
+	end
+	return true
+end
+
+function provider.renamePublishedCollection(publishSettings, info)
+	if info.isDefaultCollection or not info.remoteId or info.publishedCollection:type() ~= "LrPublishedCollection" then
+		return
+	end
+	local _, api = connect(publishSettings)
+	local ok, e = AlbumSync.rename(api, info.remoteId, info.name)
+	event("renameAlbum", { album = info.remoteId, err = e and e.message })
+	if not ok then
+		LrErrors.throwUserError("Flickr: could not rename the album: " .. FlickrResponse.describe(e))
+	end
+end
+
+-- Deleting a collection never deletes the album or its photos on Flickr.
+function provider.deletePublishedCollection(_, info)
+	event("deleteCollectionKeepAlbum", { album = info.remoteId, name = info.name })
+	if info.remoteId then
+		LrDialogs.message(
+			string.format("The Flickr album “%s” stays online.", tostring(info.name)),
+			"Only the link in Lightroom was removed. The album and its photos remain on Flickr; "
+				.. "delete them on the Flickr website if you no longer want them.",
+			"info"
+		)
+	end
+end
+
+function provider.imposeSortOrderOnPublishedCollection(publishSettings, info, remoteIdSequence)
+	if info.isDefaultCollection or not info.remoteCollectionId then
+		return
+	end
+	local _, api = connect(publishSettings)
+	local _, e = AlbumSync.reorder(api, info.remoteCollectionId, remoteIdSequence)
+	event("reorderAlbum", { album = info.remoteCollectionId, n = #remoteIdSequence, err = e and e.message })
 end
 
 local function lockToCurrentLogin(propertyTable)
@@ -261,6 +331,7 @@ local function renderQueue(entries, renderSettings)
 end
 
 -- Executes one planned action. Returns remoteId on success, or nil, message.
+-- For re-uploads, entry.oldId is set and album membership moves to the new photo.
 local function execute(api, entry, path)
 	local action = entry.action
 	local remoteId = entry.publishedId or entry.flickrId
@@ -269,13 +340,21 @@ local function execute(api, entry, path)
 	if action == "upload" or action == "reuploadKeep" or action == "reuploadDelete" then
 		local oldId = remoteId
 		remoteId, e = api:upload(path, PhotoFields.uploadFields(entry.fields))
-		if remoteId and action == "reuploadDelete" then
-			-- Only after the new upload succeeded. A failed delete leaves a duplicate, not a loss.
-			local _, delErr = api:deletePhoto(oldId)
-			event("deleteOld", { old = oldId, new = remoteId, err = delErr and delErr.message })
-		elseif remoteId and action == "reuploadKeep" then
-			-- TODO(albums): remove oldId from the albums of this photo.
-			event("keepOld", { old = oldId, new = remoteId })
+		if remoteId and oldId then
+			entry.oldId = oldId
+			local keep = action == "reuploadKeep"
+			local albums, moveErr = AlbumSync.moveToNewPhoto(api, oldId, remoteId, keep)
+			event("moveAlbums", {
+				old = oldId,
+				new = remoteId,
+				albums = albums and table.concat(albums, ",") or nil,
+				err = moveErr and moveErr.message,
+			})
+			if not keep then
+				-- Only after the new upload succeeded. A failed delete leaves a duplicate, not a loss.
+				local _, delErr = api:deletePhoto(oldId)
+				event("deleteOld", { old = oldId, new = remoteId, err = delErr and delErr.message })
+			end
 		end
 	elseif action == "replace" then
 		local _, replaceErr = api:replace(path, remoteId)
@@ -296,6 +375,25 @@ local function execute(api, entry, path)
 		end
 	end
 	return remoteId
+end
+
+-- Make sure a photo new to this collection is in its album. Re-uploads already took over the
+-- old photo's albums. Returns true or nil, message.
+local function ensureInAlbum(api, user, session, album, entry, remoteId)
+	if not album or entry.publishedId then
+		return true
+	end
+	local ok, e = AlbumSync.add(api, album, remoteId)
+	if not ok then
+		return nil, "could not add to album: " .. FlickrResponse.describe(e)
+	end
+	if album.created then
+		session:recordRemoteCollectionId(album.id)
+		session:recordRemoteCollectionUrl(AlbumSync.url(user.id, album.id))
+		event("albumCreated", { album = album.id, title = album.title, recreatedFrom = album.recreatedFrom })
+		album.created = nil
+	end
+	return true
 end
 
 -- Identifies a photo in log lines (no paths).
@@ -359,6 +457,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	})
 	resolveReplaces(functionContext, api, user, entries, counts)
 
+	-- The album of this collection (nil for the default "Photostream" collection).
+	local info = exportContext.publishedCollectionInfo or {}
+	local album = (not info.isDefaultCollection) and { id = info.remoteId, title = info.name } or nil
+	event("collection", { name = info.name, album = album and album.id, default = info.isDefaultCollection })
+
 	local queue, folder = renderQueue(entries, renderSettings)
 	exportContext:configureProgress({ title = string.format("Publishing %d photo(s) to Flickr", #entries) })
 
@@ -386,14 +489,31 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			local remoteId, err = execute(api, entry, path)
 			event(entry.action, { id = remoteId, err = err })
 			if remoteId then
-				rendition:recordPublishedPhotoId(remoteId)
-				rendition:recordPublishedPhotoUrl(PhotoFields.photoUrl(user.id, remoteId))
+				-- Persist first: if anything below fails, the next publish relinks instead of re-uploading.
 				CatalogState.save(rendition.photo, {
 					flickrId = remoteId,
 					flickrState = entry.action == "metadataOutdated" and "imageOutdated" or "published",
 					imageFingerprint = entry.current.image,
 					metadataFingerprint = entry.current.metadata,
 				})
+				local url = PhotoFields.photoUrl(user.id, remoteId)
+				if entry.oldId then
+					local n, retargetErr = CatalogState.retarget(
+						rendition.photo,
+						entry.oldId,
+						remoteId,
+						url,
+						exportContext.publishedCollection
+					)
+					event("retarget", { old = entry.oldId, new = remoteId, collections = n, err = retargetErr })
+				end
+				local inAlbum, albumErr = ensureInAlbum(api, user, session, album, entry, remoteId)
+				if inAlbum then
+					rendition:recordPublishedPhotoId(remoteId)
+					rendition:recordPublishedPhotoUrl(url)
+				else
+					fail(rendition, entry, albumErr)
+				end
 			else
 				fail(rendition, entry, err)
 			end

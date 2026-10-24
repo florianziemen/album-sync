@@ -170,16 +170,20 @@ end
 
 --[[
 Reconcile entries left open by an earlier run (crash, quit, still processing).
+Entries without photo id or usable ticket are matched against ONE listing of own uploads since
+the oldest such attempt (no waiting: by now Flickr lists finished uploads), by title, never
+matching a photo twice. Several lost entries with the same title and any match are ambiguous:
+we cannot tell whose upload it was.
 Returns { linked = { [key] = photoId }, pending = { key... }, dropped = { key... },
-ambiguous = { [key] = ids } }. Linked and dropped entries are closed by this call except linked
-ones, which the caller closes after storing the id.
+ambiguous = { [key] = ids } }. Dropped entries are closed here; linked ones are closed by the
+caller after storing the id.
 ]]
 function M:reconcile()
 	local result = { linked = {}, pending = {}, dropped = {}, ambiguous = {} }
+	local lost = {}
 	for _, item in ipairs(self.journal:openEntries()) do
 		local key, entry = item.key, item.entry
 		local photoId = entry.photoId
-		local lost = false
 		if not photoId and entry.ticket then
 			local status = self.api:checkTickets({ entry.ticket })
 			local t = status and status[entry.ticket]
@@ -191,27 +195,58 @@ function M:reconcile()
 				result.dropped[#result.dropped + 1] = key
 				self.journal:close(key)
 			else
-				lost = true
+				lost[#lost + 1] = item
 			end
 		elseif not photoId then
-			lost = true
-		end
-		if lost then
-			local found, ids = self:findRecent(entry.title, entry.started or 0)
-			if found then
-				photoId = found
-			elseif found == false then
-				result.ambiguous[key] = ids
-			else
-				result.dropped[#result.dropped + 1] = key
-				self.journal:close(key)
-			end
+			lost[#lost + 1] = item
 		end
 		if photoId then
 			self.claimed[photoId] = true
 			result.linked[key] = photoId
 		end
 	end
+
+	if #lost > 0 then
+		local since
+		for _, item in ipairs(lost) do
+			local started = item.entry.started or 0
+			since = since and math.min(since, started) or started
+		end
+		local photos = self.api:recentUploads(since - M.RECENT_SLACK)
+		local byTitle, order = {}, {}
+		for _, item in ipairs(lost) do
+			local title = item.entry.title or ""
+			if not byTitle[title] then
+				byTitle[title] = {}
+				order[#order + 1] = title
+			end
+			table.insert(byTitle[title], item)
+		end
+		for _, title in ipairs(order) do
+			local items = byTitle[title]
+			local ids = {}
+			for _, p in ipairs(photos or {}) do
+				if p.title == title and not self.claimed[p.id] then
+					ids[#ids + 1] = p.id
+				end
+			end
+			for _, item in ipairs(items) do
+				if not photos then
+					result.pending[#result.pending + 1] = item.key -- listing failed: try again next run
+				elseif #ids == 0 then
+					result.dropped[#result.dropped + 1] = item.key
+					self.journal:close(item.key)
+				elseif #ids == 1 and #items == 1 then
+					self.claimed[ids[1]] = true
+					result.linked[item.key] = ids[1]
+				else
+					result.ambiguous[item.key] = ids
+				end
+			end
+		end
+	end
+	table.sort(result.dropped)
+	table.sort(result.pending)
 	return result
 end
 

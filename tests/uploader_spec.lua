@@ -221,7 +221,7 @@ describe("Uploader.reconcile", function()
 				end
 				return { answer, answer, answer }
 			end)(),
-			recentUploads = { { { { id = "P5", title = "E" } } }, { {} }, { {} }, { {} } },
+			recentUploads = { { { { id = "P5", title = "E" } } } }, -- one listing for all lost entries
 		})
 		local r = Uploader.new(deps(), api, journal):reconcile()
 		assert.same({ done = "P0", ticketOk = "P1", noTicketFound = "P5" }, r.linked)
@@ -230,5 +230,32 @@ describe("Uploader.reconcile", function()
 		assert.is_nil(journal:get("ticketFailed"))
 		assert.is_not_nil(journal:get("ticketPending"))
 		assert.is_not_nil(journal:get("ticketOk")) -- closed by the caller after storing the id
+		local listings = 0
+		for _, c in ipairs(api.calls) do
+			listings = listings + (c == "recentUploads" and 1 or 0)
+		end
+		assert.equal(1, listings)
+	end)
+
+	it("does not guess when several lost entries share a title", function()
+		local journal = Journal.new(memoryStorage())
+		journal:open("a", { title = "IMG", started = 10 })
+		journal:open("b", { title = "IMG", started = 20 })
+		journal:open("c", { title = "X", started = 30 })
+		local api = fakeApi({ recentUploads = { { { { id = "P1", title = "IMG" }, { id = "P2", title = "Y" } } } } })
+		local r = Uploader.new(deps(), api, journal):reconcile()
+		-- one photo, two lost entries with that title: cannot tell whose upload it was
+		assert.same({ a = { "P1" }, b = { "P1" } }, r.ambiguous)
+		assert.same({}, r.linked)
+		assert.same({ "c" }, r.dropped)
+	end)
+
+	it("keeps entries pending when the listing fails", function()
+		local journal = Journal.new(memoryStorage())
+		journal:open("a", { title = "IMG", started = 10 })
+		local api = fakeApi({ recentUploads = { { nil, { class = "transient" } } } })
+		local r = Uploader.new(deps(), api, journal):reconcile()
+		assert.same({ "a" }, r.pending)
+		assert.is_not_nil(journal:get("a"))
 	end)
 end)

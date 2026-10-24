@@ -17,6 +17,7 @@ local LrDialogs = import("LrDialogs")
 local LrErrors = import("LrErrors")
 local LrFileUtils = import("LrFileUtils")
 local LrLogger = import("LrLogger")
+local LrProgressScope = import("LrProgressScope")
 local LrTasks = import("LrTasks")
 local LrView = import("LrView")
 
@@ -594,7 +595,15 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
 	end
 	local uploader = Uploader.new(deps, api, journal)
-	local blocked = dryRun and { pending = {}, ambiguous = {} } or reconcileJournal(uploader, journal)
+	local blocked = { pending = {}, ambiguous = {} }
+	if not dryRun and #journal:openEntries() > 0 then
+		local scope = LrProgressScope({
+			title = string.format("Flickr: checking %d interrupted upload(s)…", #journal:openEntries()),
+			functionContext = functionContext,
+		})
+		blocked = reconcileJournal(uploader, journal)
+		scope:done()
+	end
 
 	local renderSettings = PhotoRenderer.copySettings(settings)
 	if not renderSettings then

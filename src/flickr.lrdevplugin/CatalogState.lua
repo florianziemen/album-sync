@@ -30,13 +30,35 @@ function M.load(photos)
 	return result
 end
 
---- See load(): clears fields a virtual copy inherited from its master.
+--- { [photo.localIdentifier] = { [remoteId] = true } } over all plugin collections.
+function M.collectionIdsByPhoto()
+	local map = {}
+	for _, c in ipairs(M.pluginCollections()) do
+		for _, pp in ipairs(c:getPublishedPhotos()) do
+			local rid = pp:getRemoteId()
+			if rid then
+				local key = pp:getPhoto().localIdentifier
+				map[key] = map[key] or {}
+				map[key][tostring(rid)] = true
+			end
+		end
+	end
+	return map
+end
+
+--[[
+See load(): clears fields a virtual copy inherited. Lightroom copies plugin fields when a
+virtual copy is created (from the master or from another copy), so a copy's Flickr ID is only
+trusted if this copy itself is recorded with that id in a published collection of this plugin
+(true for every real upload or link). Masters are not affected.
+]]
 function M.dropCopiedFields(fieldsByPhoto)
+	local byPhoto -- built lazily: only needed when a virtual copy carries a Flickr ID
 	for photo, fields in pairs(fieldsByPhoto) do
 		if fields.flickrId and photo:getRawMetadata("isVirtualCopy") then
-			local master = photo:getRawMetadata("masterPhoto")
-			local masterId = master and master:getPropertyForPlugin(_PLUGIN, "flickrId", nil, true)
-			if masterId and tostring(masterId) == tostring(fields.flickrId) then
+			byPhoto = byPhoto or M.collectionIdsByPhoto()
+			local own = byPhoto[photo.localIdentifier]
+			if not (own and own[tostring(fields.flickrId)]) then
 				fieldsByPhoto[photo] = { copiedFrom = fields.flickrId, flickrPrivacy = fields.flickrPrivacy }
 			end
 		end
@@ -256,7 +278,7 @@ function M.matcherRecords()
 		{ "fileName", "preservedFileName", "cameraSerialNumber", "title", "copyName" }
 	)
 	local plugin = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
-	local records, byKey, linked = {}, {}, {}
+	local records, byKey, linked, withIds = {}, {}, {}, {}
 	for _, photo in ipairs(photos) do
 		local r, f = raw[photo] or {}, fmt[photo] or {}
 		if not r.isVideo and r.uuid then
@@ -294,14 +316,22 @@ function M.matcherRecords()
 			byKey[r.uuid] = photo
 			local p = plugin[photo]
 			if p and p.flickrId then
-				local single = { [photo] = p }
-				M.dropCopiedFields(single)
-				if single[photo].flickrId then
-					linked[r.uuid] = p.flickrId
-				end
+				withIds[photo] = { flickrId = p.flickrId, uuid = r.uuid }
 			end
 		end
 	end
+	-- Copied fields of virtual copies are not links (one pass for all photos).
+	local fieldsCopy = {}
+	for photo, f in pairs(withIds) do
+		fieldsCopy[photo] = { flickrId = f.flickrId }
+	end
+	M.dropCopiedFields(fieldsCopy)
+	for photo, f in pairs(withIds) do
+		if fieldsCopy[photo].flickrId then
+			linked[f.uuid] = f.flickrId
+		end
+	end
+
 	-- Links recorded only in published collections count too (e.g. photos published before the
 	-- flickrId field existed, or a link whose field write did not complete).
 	local uuidByLocal = {}

@@ -87,6 +87,47 @@ describe("FlickrApi", function()
 		assert.equal(1, #deps.calls)
 	end)
 
+	it("uploads async and returns the ticket", function()
+		local deps = h.fakeDeps({}, {
+			{ status = 200, body = '<?xml version="1.0"?>\n<rsp stat="ok">\n<ticketid>1234-5678</ticketid>\n</rsp>' },
+		})
+		assert.equal("1234-5678", FlickrApi.new(deps, h.CREDS, ACCESS):uploadAsync("/tmp/x.jpg", { title = "t" }))
+		assert.equal("1", deps.uploads[1].params.async)
+		verifySignature("POST", deps.uploads[1].url, deps.uploads[1].params)
+	end)
+
+	it("parses ticket status (array and single object)", function()
+		local deps = h.fakeDeps({
+			{
+				status = 200,
+				body = '{"uploader":{"ticket":[{"id":"1","complete":1,"photoid":"99"},'
+					.. '{"id":"2","complete":0},{"id":"3","invalid":1}]},"stat":"ok"}',
+			},
+			{ status = 200, body = '{"uploader":{"ticket":{"id":"4","complete":"2"}},"stat":"ok"}' },
+		})
+		local api = FlickrApi.new(deps, h.CREDS, ACCESS)
+		local t = api:checkTickets({ "1", "2", "3" })
+		assert.same({ complete = 1, photoId = "99", invalid = false }, t["1"])
+		assert.equal(0, t["2"].complete)
+		assert.is_true(t["3"].invalid)
+		assert.equal("1,2,3", deps.calls[1].params.tickets)
+		assert.equal(2, api:checkTickets({ "4" })["4"].complete)
+	end)
+
+	it("lists recent uploads", function()
+		local deps = h.fakeDeps({
+			{
+				status = 200,
+				body = '{"photos":{"page":1,"photo":[{"id":"7","title":"IMG_1","dateupload":"1700000000",'
+					.. '"datetaken":"2026-10-24 14:26:21"}]},"stat":"ok"}',
+			},
+		})
+		local list = FlickrApi.new(deps, h.CREDS, ACCESS):recentUploads(1699999999.7)
+		assert.same({ { id = "7", title = "IMG_1", uploaded = 1700000000, taken = "2026-10-24 14:26:21" } }, list)
+		assert.equal("1699999999", deps.calls[1].params.min_upload_date)
+		assert.equal("me", deps.calls[1].params.user_id)
+	end)
+
 	it("deletes photos via POST", function()
 		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"ok"}' } })
 		assert.is_true(FlickrApi.new(deps, h.CREDS, ACCESS):deletePhoto("42"))

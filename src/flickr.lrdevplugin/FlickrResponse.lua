@@ -99,6 +99,19 @@ function M.describe(e)
 	return s
 end
 
+--- Async upload: returns the ticket id (string) or nil, err (errors as for parseUpload).
+function M.parseUploadTicket(resp)
+	local ticket = (resp and resp.body or ""):match('<rsp stat="ok">.-<ticketid[^>]*>([%w%-]+)</ticketid>')
+	if ticket then
+		return ticket
+	end
+	local id, e = M.parseUpload(resp)
+	if id then
+		return nil, err("unexpected", resp.status, "async upload returned a photo id instead of a ticket", resp)
+	end
+	return nil, e
+end
+
 --- Upload/replace endpoints: always XML. Returns photo id (string) or nil, err.
 function M.parseUpload(resp)
 	local failure = httpFailure(resp)

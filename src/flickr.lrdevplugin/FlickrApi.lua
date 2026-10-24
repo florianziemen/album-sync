@@ -143,6 +143,91 @@ function M:upload(filePath, fields)
 	return self:_postFile("upload", UPLOAD_URL, filePath, fields)
 end
 
+--- Async upload: returns a ticket id (poll with checkTickets) or nil, err.
+function M:uploadAsync(filePath, fields)
+	local all = { async = "1" }
+	for k, v in pairs(fields or {}) do
+		all[k] = v
+	end
+	local req = {
+		method = "POST",
+		url = UPLOAD_URL,
+		params = self:sign("POST", UPLOAD_URL, all, self.access.token, self.access.tokenSecret),
+		filePath = filePath,
+		fileField = "photo",
+		fileSize = self.deps.fileSize and self.deps.fileSize(filePath),
+	}
+	return self:exchange("upload(async)", self.deps.postMultipart, req, FlickrResponse.parseUploadTicket)
+end
+
+--[[
+Ticket status. Returns { [ticketId] = { complete = 0|1|2, photoId = string|nil, invalid = bool } }
+or nil, err. complete: 0 pending, 1 done (photoId set), 2 failed (file could not be processed).
+]]
+function M:checkTickets(ticketIds)
+	local data, e = self:call(
+		"flickr.photos.upload.checkTickets",
+		{ tickets = table.concat(ticketIds, ",") },
+		nil,
+		function(d)
+			if type(d.uploader) ~= "table" then
+				return "checkTickets: missing uploader"
+			end
+		end
+	)
+	if not data then
+		return nil, e
+	end
+	local tickets = data.uploader.ticket or {}
+	if tickets.id then
+		tickets = { tickets }
+	end
+	local out = {}
+	for _, t in ipairs(tickets) do
+		out[tostring(t.id)] = {
+			complete = tonumber(t.complete) or 0,
+			photoId = t.photoid and tostring(t.photoid) or nil,
+			invalid = tonumber(t.invalid) == 1,
+		}
+	end
+	return out
+end
+
+--[[
+Own photos uploaded at or after `sinceUnix` (most recent first, up to 500).
+Returns array of { id, title, uploaded (unix), taken } or nil, err.
+]]
+function M:recentUploads(sinceUnix)
+	local data, e = self:call(
+		"flickr.people.getPhotos",
+		{
+			user_id = "me",
+			min_upload_date = tostring(math.floor(sinceUnix)),
+			extras = "date_upload,date_taken",
+			per_page = "500",
+		},
+		nil,
+		function(d)
+			if type(d.photos) ~= "table" then
+				return "people.getPhotos: missing photos"
+			end
+		end
+	)
+	if not data then
+		return nil, e
+	end
+	local out = {}
+	for _, p in ipairs(data.photos.photo or {}) do
+		out[#out + 1] = {
+			id = tostring(p.id),
+			title = p.title,
+			uploaded = tonumber(p.dateupload),
+			taken = p.datetaken,
+		}
+	end
+	return out
+end
+
 --- Replace the image of an existing photo (Flickr Pro only). Returns the photo id or nil, err;
 --- a non-Pro account yields class "replace_not_pro".
 function M:replace(filePath, photoId)

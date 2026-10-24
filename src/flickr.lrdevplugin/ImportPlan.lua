@@ -7,6 +7,7 @@ Inputs:
   catalog     Matcher catalog records (key = photo uuid)
   range       { min, max } wall-clock taken strings of the catalog
   linked      { [key] = flickrId } photos already linked (plugin field)
+  linkedIds   optional set of every Flickr id linked in the catalog (incl. collections)
 Matching runs once over all Flickr photos in range, so duplicates are found across albums.
 
 Result: {
@@ -22,7 +23,7 @@ local Matcher = require("Matcher")
 
 local M = {}
 
-function M.build(albums, photostream, catalog, range, linked)
+function M.build(albums, photostream, catalog, range, linked, linkedIds)
 	linked = linked or {}
 	local inRangeAlbums, all, seen, albumOf = {}, {}, {}, {}
 	local function add(p)
@@ -48,13 +49,17 @@ function M.build(albums, photostream, catalog, range, linked)
 
 	-- Pairs linked earlier (this catalog) are settled: leave both sides out of matching, so
 	-- re-running the import neither re-queues them nor offers them as candidates.
-	local linkedIds = {}
+	-- linkedIds (optional): every Flickr id linked in this catalog, incl. collection-only links.
+	local settledIds = {}
+	for id in pairs(linkedIds or {}) do
+		settledIds[tostring(id)] = true
+	end
 	for _, id in pairs(linked) do
-		linkedIds[tostring(id)] = true
+		settledIds[tostring(id)] = true
 	end
 	local open, alreadyLinked = {}, 0
 	for _, p in ipairs(all) do
-		if linkedIds[p.id] then
+		if settledIds[p.id] then
 			alreadyLinked = alreadyLinked + 1
 		else
 			open[#open + 1] = p

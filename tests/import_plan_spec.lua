@@ -68,6 +68,12 @@ describe("ImportPlan", function()
 		end
 	end)
 
+	it("treats Flickr ids linked only in collections as settled", function()
+		local r = ImportPlan.build(albums, photostream, catalog, RANGE, {}, { ["3"] = true })
+		assert.equal(1, r.stats.alreadyLinked)
+		assert.same({}, r.photostream.matches) -- photo 3 is settled, not matched again
+	end)
+
 	it("derives the catalog range and wall-clock times", function()
 		assert.same({ min = "2019-03-01 10:00:00", max = "2019-03-01 13:00:00" }, ImportPlan.range(catalog))
 		assert.equal("2019-05-01 10:00:00", ImportPlan.wallClock("2019-05-01T10:00:00.12+02:00"))

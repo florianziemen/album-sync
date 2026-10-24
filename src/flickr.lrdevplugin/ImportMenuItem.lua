@@ -148,7 +148,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 
 	local progress = LrProgressScope({ title = "Flickr: reading catalog and albums", functionContext = context })
 	progress:setCaption("Reading catalog…")
-	local records, photoByKey, linked = CatalogState.matcherRecords()
+	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
 	local range = ImportPlan.range(records)
 	if not range then
 		progress:done()
@@ -187,7 +187,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 		return fatal(FlickrResponse.describe(e))
 	end
 
-	local plan = ImportPlan.build(albums, photostream, records, range, linked)
+	local plan = ImportPlan.build(albums, photostream, records, range, linked, linkedIds)
 
 	-- Tier 3: EXIF tie-break for "same time" cases (one getExif call each).
 	local recordByKey = {}

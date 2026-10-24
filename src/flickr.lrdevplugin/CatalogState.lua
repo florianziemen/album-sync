@@ -240,7 +240,8 @@ end
 --[[
 Matcher records for every photo in the catalog (videos excluded), read in batches.
 Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }, from the plugin field
-or, failing that, from this plugin's published collections).
+or, failing that, from this plugin's published collections), linkedIds (set of every linked
+Flickr id, see linkedFlickrIds).
 ]]
 function M.matcherRecords()
 	local catalog = LrApplication.activeCatalog()
@@ -312,7 +313,28 @@ function M.matcherRecords()
 			end
 		end
 	end
-	return records, byKey, linked
+	return records, byKey, linked, M.linkedFlickrIds(linked)
+end
+
+--[[
+Every Flickr id this catalog knows as linked: plugin fields (`linked` map values) plus every
+remote id in this plugin's published collections. A Flickr photo in this set must never be
+linked to another catalog photo.
+]]
+function M.linkedFlickrIds(linked)
+	local ids = {}
+	for _, id in pairs(linked or {}) do
+		ids[tostring(id)] = true
+	end
+	for _, c in ipairs(M.pluginCollections()) do
+		for _, pp in ipairs(c:getPublishedPhotos()) do
+			local rid = pp:getRemoteId()
+			if rid then
+				ids[tostring(rid)] = true
+			end
+		end
+	end
+	return ids
 end
 
 --- The publish service of this plugin (first one), or nil.

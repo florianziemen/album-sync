@@ -138,7 +138,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 		return
 	end
 
-	local records, photoByKey, linked = CatalogState.matcherRecords()
+	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
 	local recordByKey = {}
 	for _, r in ipairs(records) do
 		recordByKey[r.key] = r
@@ -147,10 +147,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	LrFileUtils.createAllDirectories(dir)
 
 	local linkedCount, dismissed, auto, settled = 0, 0, 0, 0
-	local linkedFlickr = {}
-	for _, id in pairs(linked) do
-		linkedFlickr[tostring(id)] = true
-	end
+	local linkedFlickr = linkedIds -- every Flickr id linked anywhere in this catalog
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
 		local where, conflicts = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
@@ -192,8 +189,20 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 				}
 			end
 		end
+		local states = {}
+		for _, c in ipairs(candidates) do
+			states[#states + 1] = c.key .. "=" .. tostring(c.linkedTo)
+		end
+		log:info(
+			string.format(
+				"review: item flickr=%s linkedSomewhere=%s candidates %s",
+				item.id,
+				tostring(linkedFlickr[tostring(item.id)] == true),
+				table.concat(states, " ")
+			)
+		)
 		if linkedFlickr[tostring(item.id)] then
-			queue:remove(item.id) -- linked meanwhile (earlier review or import)
+			queue:remove(item.id) -- linked meanwhile (earlier review, import or publish)
 			settled = settled + 1
 			log:info("review: flickr=" .. item.id .. " is already linked; removed from the queue")
 		elseif #candidates == 0 then

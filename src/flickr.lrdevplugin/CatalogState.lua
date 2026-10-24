@@ -6,6 +6,8 @@ inputs for fingerprints. Must run inside an LrTasks task.
 local LrApplication = import("LrApplication")
 local LrTasks = import("LrTasks")
 
+local ImportPlan = require("ImportPlan")
+
 local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerprint" }
 
 local M = {}
@@ -212,6 +214,112 @@ function M.markDeleted(photos, staleLinks, unlink)
 			item.collection:removePhotos(item.photos)
 		end
 	end, { timeout = 60 })
+end
+
+--[[
+Matcher records for every photo in the catalog (videos excluded), read in batches.
+Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }).
+]]
+function M.matcherRecords()
+	local catalog = LrApplication.activeCatalog()
+	local photos = catalog:getAllPhotos()
+	local raw =
+		catalog:batchGetRawMetadata(photos, { "uuid", "dateTimeOriginalISO8601", "croppedDimensions", "isVideo" })
+	local fmt = catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName" })
+	local plugin = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
+	local records, byKey, linked = {}, {}, {}
+	for _, photo in ipairs(photos) do
+		local r, f = raw[photo] or {}, fmt[photo] or {}
+		if not r.isVideo and r.uuid then
+			local dims = r.croppedDimensions
+			local taken = ImportPlan.wallClock(r.dateTimeOriginalISO8601)
+			local names = {}
+			if f.fileName and f.fileName ~= "" then
+				names[#names + 1] = f.fileName
+			end
+			if f.preservedFileName and f.preservedFileName ~= "" then
+				names[#names + 1] = f.preservedFileName
+			end
+			records[#records + 1] = {
+				key = r.uuid,
+				taken = taken,
+				names = names,
+				aspect = (dims and dims.width and dims.height and dims.height > 0) and dims.width / dims.height or nil,
+			}
+			byKey[r.uuid] = photo
+			local p = plugin[photo]
+			if p and p.flickrId then
+				linked[r.uuid] = p.flickrId
+			end
+		end
+	end
+	return records, byKey, linked
+end
+
+--- The publish service of this plugin (first one), or nil.
+function M.publishService()
+	return LrApplication.activeCatalog():getPublishServices(_PLUGIN.id)[1]
+end
+
+--- { [remoteId] = collection } for all collections of this plugin.
+function M.collectionsByRemoteId()
+	local out = {}
+	for _, c in ipairs(M.pluginCollections()) do
+		local rid = c:getRemoteId()
+		if rid then
+			out[tostring(rid)] = c
+		end
+	end
+	return out
+end
+
+--- The service's default collection ("Photostream"), or nil.
+function M.defaultCollection(service)
+	for _, c in ipairs(service:getChildCollections()) do
+		local ok, info = pcall(function()
+			return c:getCollectionInfoSummary()
+		end)
+		if ok and type(info) == "table" and info.isDefaultCollection then
+			return c
+		end
+	end
+	for _, c in ipairs(service:getChildCollections()) do
+		if c:getName() == "Photostream" then
+			return c
+		end
+	end
+	return nil
+end
+
+--[[
+Link already-published photos into `collection` without uploading.
+links: array of { photo, id, url, fingerprints = { image, metadata } }.
+remote: optional { id, url } recorded on the collection (album).
+Written in chunks of 500 photos per write gate.
+]]
+function M.linkPublished(collection, links, remote)
+	local catalog = LrApplication.activeCatalog()
+	local CHUNK = 500
+	local first = true
+	local i = 1
+	repeat
+		catalog:withWriteAccessDo("Flickr: link existing photos", function()
+			if first and remote then
+				collection:setRemoteId(remote.id)
+				collection:setRemoteUrl(remote.url)
+			end
+			for j = i, math.min(i + CHUNK - 1, #links) do
+				local l = links[j]
+				collection:addPhotoByRemoteId(l.photo, l.id, l.url, true)
+				l.photo:setPropertyForPlugin(_PLUGIN, "flickrId", l.id)
+				l.photo:setPropertyForPlugin(_PLUGIN, "flickrState", "published")
+				l.photo:setPropertyForPlugin(_PLUGIN, "imageFingerprint", l.fingerprints.image)
+				l.photo:setPropertyForPlugin(_PLUGIN, "metadataFingerprint", l.fingerprints.metadata)
+			end
+		end, { timeout = 120 })
+		first = false
+		i = i + CHUNK
+	until i > #links
 end
 
 return M

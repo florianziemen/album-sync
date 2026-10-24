@@ -114,21 +114,6 @@ function M.build(albums, photostream, catalog, range, linked)
 	return result
 end
 
---- Merge new review items into an existing queue (array), deduplicated by Flickr id.
-function M.mergeReview(queue, items)
-	local byId = {}
-	for _, q in ipairs(queue) do
-		byId[q.id] = true
-	end
-	for _, item in ipairs(items) do
-		if not byId[item.id] then
-			byId[item.id] = true
-			queue[#queue + 1] = item
-		end
-	end
-	return queue
-end
-
 --- Catalog range from Matcher records: { min, max } or nil when no dated photos.
 function M.range(catalog)
 	local lo, hi

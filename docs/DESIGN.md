@@ -213,6 +213,14 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - A unique match → `addPhotoByRemoteId(photo, id, url, true)`. Store the Flickr ID in the plugin field.
 - Ambiguous or weak matches → save them as a persistent **review queue** for later. The user resolves them from a dialog, accepts or skips, and can come back later. Nothing is linked automatically.
 
+**Implementation (2026-10-24):** menu command "Flickr: Link existing Flickr albums…" (`ImportMenuItem.lua`, `ImportPlan.lua`, `Matcher.lua`, `FlickrIndex.lua`, `ReviewQueue.lua`).
+- **Read-only on Flickr:** a `perms=read` login is enough. Logins are per account with read/write/delete permission (`CredentialStore`), and publishing needs write. The catalog must use exactly one Flickr account (`AccountGuard.catalogAccount`).
+- **Catalog side:** capture time comes from `dateTimeOriginalISO8601` (first 19 characters, wall clock), names from `fileName` and `preservedFileName`, aspect ratio from `croppedDimensions`. Values are read in batches.
+- **Flickr side:** albums are cached per account (`lrflickr/albums-<nsid>.json`, refetched when `date_update` changes). Photos taken in the catalog range come from `people.getPhotos`, with the window split while it exceeds 3500 results.
+- **Matching:** same second, then a unique title against the file or preserved name, then a unique aspect ratio (1%). Everything else goes to review: ties, single candidates with a different crop, duplicates on Flickr, and photos already linked to another ID. Photos without a candidate are not in this catalog and are ignored.
+- **Linking:** one collection per album under a set named after the year of the album's newest photo. Existing collections with the same remote ID are reused. The collection gets the album's remote ID and URL, and photos are added with `addPhotoByRemoteId(…, true)`. The plugin fields `flickrId`, `flickrState` and the current fingerprints are set, so nothing is pushed until the photo changes in LR. Matched photos in no album go to "Photostream". Writes go in chunks of 500 per gate.
+- **Review queue:** `lrflickr/review-<catalog>.json`. The command to work through it is still to do.
+
 **Known failure modes.**
 
 - Burst shots taken in the same second.

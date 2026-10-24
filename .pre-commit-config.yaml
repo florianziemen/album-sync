@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: stylua
+        name: stylua
+        entry: stylua
+        language: system
+        types: [lua]
+        exclude: ^src/flickr\.lrdevplugin/json\.lua$
+      - id: luacheck
+        name: luacheck
+        entry: luacheck
+        language: system
+        types: [lua]

@@ -1,0 +1,6 @@
+return {
+	_all = {
+		lpath = "src/flickr.lrdevplugin/?.lua;./?.lua",
+		ROOT = { "tests" },
+	},
+}

@@ -6,18 +6,27 @@ local f = {
 	end,
 }
 
-describe("UiText.wrapped", function()
-	it("sets a fixed width and enough lines to wrap", function()
-		local short = UiText.wrapped(f, "Short text.")
-		assert.same({ title = "Short text.", width_in_chars = 70, height_in_lines = 1 }, short)
-		local long = UiText.wrapped(f, string.rep("word ", 30)) -- 150 characters
-		assert.equal(3, long.height_in_lines)
-		-- exactly at the width: one line; multi-byte quotes count as one character each
-		assert.equal(1, UiText.wrapped(f, string.rep("x", 68) .. "“”").height_in_lines)
+describe("UiText", function()
+	it("breaks text at word boundaries", function()
+		local text, lines = UiText.wrap("one two three four five", 9)
+		assert.equal("one two\nthree\nfour five", text)
+		assert.equal(3, lines)
 	end)
 
-	it("counts explicit line breaks", function()
-		assert.equal(2, UiText.wrapped(f, "first\nsecond").height_in_lines)
-		assert.equal(4, UiText.wrapped(f, "a\n" .. string.rep("x", 100), 40).height_in_lines)
+	it("keeps explicit line breaks and counts characters, not bytes", function()
+		local text, lines = UiText.wrap("“quoted” words here\nsecond", 19)
+		assert.equal("“quoted” words here\nsecond", text)
+		assert.equal(2, lines)
+	end)
+
+	it("never splits a long word", function()
+		local text = UiText.wrap("File > Plug-in Extras > Album Sync: Log in", 5)
+		assert.truthy(text:find("Plug-in", 1, true))
+	end)
+
+	it("returns a static_text with the wrapped title and its line count", function()
+		local view = UiText.wrapped(f, string.rep("word ", 30)) -- 149 characters
+		assert.equal(3, view.height_in_lines)
+		assert.is_nil(view.title:find("\n[^\n]*\n[^\n]*\n"))
 	end)
 end)

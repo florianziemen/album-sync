@@ -259,6 +259,11 @@ local function accountItems(current)
 	return items
 end
 
+-- Settings created before a checkbox existed hold nil, which LrView would treat as "show".
+local function isOn(v)
+	return v == true
+end
+
 function provider.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	propertyTable:addObserver("lockedNsid", function(props, _, nsid)
@@ -329,14 +334,14 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 				f:checkbox({ title = "Debug mode (shows options for testing)", value = bind("debugMode") }),
 			}),
 			f:row({
-				visible = bind("debugMode"),
+				visible = bind({ key = "debugMode", transform = isOn }),
 				f:checkbox({
 					title = "Dry run: plan and render, but make no changes on Flickr or in the catalog",
 					value = bind("dryRun"),
 				}),
 			}),
 			f:row({
-				visible = bind("debugMode"),
+				visible = bind({ key = "debugMode", transform = isOn }),
 				f:static_text({ title = "Inject fault:", width = 110 }),
 				f:popup_menu({
 					value = bind("faultMode"),

@@ -282,7 +282,7 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: link existing albums", f
 	local function linksFor(matches)
 		local list = {}
 		for i, m in ipairs(matches) do
-			list[i] = { id = m.id, photo = photoByKey[m.key] }
+			list[i] = { id = m.id, photo = photoByKey[m.key], primary = m.primary }
 		end
 		return Linker.links(nsid, list, renderSettings, service:getPublishSettings())
 	end

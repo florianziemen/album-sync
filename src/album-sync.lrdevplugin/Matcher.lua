@@ -83,6 +83,7 @@ Returns {
   matches = { [flickrId] = { key, how } },
   review = array of { id, candidates = {key...}, reason },
   notInCatalog = array of flickr ids,
+  duplicates = { [key] = { flickrId... } }  (also in review, reason "duplicate on Flickr"),
 }
 ]]
 function M.match(catalog, flickr)
@@ -94,7 +95,7 @@ function M.match(catalog, flickr)
 		end
 	end
 
-	local result = { matches = {}, review = {}, notInCatalog = {} }
+	local result = { matches = {}, review = {}, notInCatalog = {}, duplicates = {} }
 	local claimedBy = {} -- catalog key -> array of flickr ids
 	local function keys(list)
 		local out = {}
@@ -171,6 +172,7 @@ function M.match(catalog, flickr)
 	-- Duplicates on Flickr: one catalog photo, several Flickr photos -> review all of them.
 	for key, ids in pairs(claimedBy) do
 		if #ids > 1 then
+			result.duplicates[key] = ids
 			for _, id in ipairs(ids) do
 				result.matches[id] = nil
 				result.review[#result.review + 1] = { id = id, candidates = { key }, reason = "duplicate on Flickr" }

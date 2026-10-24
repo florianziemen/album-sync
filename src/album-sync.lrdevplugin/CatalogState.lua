@@ -493,7 +493,7 @@ function M.linkPublished(collection, links, remote)
 				if not l.alreadyInCollection then
 					collection:addPhotoByRemoteId(l.photo, l.id, l.url, true)
 				end
-				l.photo:setPropertyForPlugin(_PLUGIN, "flickrId", l.id)
+				l.photo:setPropertyForPlugin(_PLUGIN, "flickrId", l.fieldId or l.id)
 				l.photo:setPropertyForPlugin(_PLUGIN, "flickrState", "published")
 				l.photo:setPropertyForPlugin(_PLUGIN, "imageFingerprint", l.fingerprints.image)
 				l.photo:setPropertyForPlugin(_PLUGIN, "metadataFingerprint", l.fingerprints.metadata)

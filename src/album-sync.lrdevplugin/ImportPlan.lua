@@ -79,6 +79,49 @@ function M.build(albums, photostream, catalog, range, linked, linkedIds)
 
 	local r = Matcher.match(candidates, open)
 
+	-- One catalog photo, several Flickr photos: older publish services uploaded a photo once per
+	-- collection. If every copy is in different albums (and none is album-less), link each copy in
+	-- its own album; the plugin field gets the oldest (lowest id). Otherwise they stay in review.
+	local perAlbum = {}
+	for key, ids in pairs(r.duplicates) do
+		local seenAlbum, ok = {}, true
+		for _, id in ipairs(ids) do
+			local albumsOfId = albumOf[id]
+			if not albumsOfId or #albumsOfId == 0 then
+				ok = false
+			end
+			for _, a in ipairs(albumsOfId or {}) do
+				if seenAlbum[a.id] then
+					ok = false
+				end
+				seenAlbum[a.id] = true
+			end
+		end
+		if ok then
+			local primary
+			for _, id in ipairs(ids) do
+				if not primary or tonumber(id) < tonumber(primary) then
+					primary = id
+				end
+			end
+			for _, id in ipairs(ids) do
+				perAlbum[id] = { key = key, how = "copy per album", primary = primary }
+			end
+		end
+	end
+	if next(perAlbum) then
+		local kept = {}
+		for _, item in ipairs(r.review) do
+			if not perAlbum[item.id] then
+				kept[#kept + 1] = item
+			end
+		end
+		r.review = kept
+		for id, m in pairs(perAlbum) do
+			r.matches[id] = m
+		end
+	end
+
 	-- A photo already linked to a different Flickr id is a conflict, not a match.
 	local review = {}
 	for _, item in ipairs(r.review) do
@@ -87,7 +130,8 @@ function M.build(albums, photostream, catalog, range, linked, linkedIds)
 	local matches = {}
 	for id, m in pairs(r.matches) do
 		local existing = linked[m.key]
-		if existing and existing ~= id then
+		local sameGroup = existing and perAlbum[id] and perAlbum[tostring(existing)] ~= nil
+		if existing and existing ~= id and not sameGroup then
 			review[#review + 1] = {
 				id = id,
 				candidates = { m.key },
@@ -125,7 +169,7 @@ function M.build(albums, photostream, catalog, range, linked, linkedIds)
 		for _, p in ipairs(entry.photos) do
 			local m = matches[p.id]
 			if m then
-				plan.matches[#plan.matches + 1] = { id = p.id, key = m.key, how = m.how }
+				plan.matches[#plan.matches + 1] = { id = p.id, key = m.key, how = m.how, primary = m.primary }
 			elseif reviewById[p.id] then
 				plan.review[#plan.review + 1] = reviewById[p.id]
 			end

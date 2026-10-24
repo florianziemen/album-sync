@@ -106,3 +106,30 @@ describe("ImportPlan.promote", function()
 		assert.equal(0, plan.stats.review)
 	end)
 end)
+
+describe("ImportPlan duplicates", function()
+	local catalog = { { key = "u1", taken = "2019-03-01 10:00:00", names = { "IMG_1.CR3" }, aspect = 1.5 } }
+	local function ph(id)
+		return { id = id, title = "IMG_1", taken = "2019-03-01 10:00:00", w = 6000, h = 4000 }
+	end
+
+	it("links one upload per album to the same catalog photo", function()
+		local albums = {
+			{ id = "A", title = "A", photos = { ph("200") } },
+			{ id = "B", title = "B", photos = { ph("100") } },
+		}
+		local r = ImportPlan.build(albums, { ph("100"), ph("200") }, catalog, RANGE, {})
+		assert.same({}, r.review)
+		assert.same({ { id = "200", key = "u1", how = "copy per album", primary = "100" } }, r.albums[1].matches)
+		assert.same({ { id = "100", key = "u1", how = "copy per album", primary = "100" } }, r.albums[2].matches)
+	end)
+
+	it("keeps real duplicates (same album, or no album) in review", function()
+		local sameAlbum = { { id = "A", title = "A", photos = { ph("100"), ph("200") } } }
+		local r = ImportPlan.build(sameAlbum, {}, catalog, RANGE, {})
+		assert.equal(2, #r.review)
+		local oneAlbumless = { { id = "A", title = "A", photos = { ph("100") } } }
+		r = ImportPlan.build(oneAlbumless, { ph("100"), ph("300") }, catalog, RANGE, {})
+		assert.equal(2, #r.review)
+	end)
+end)

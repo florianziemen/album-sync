@@ -37,6 +37,8 @@ function M.links(nsid, matches, renderSettings, serviceSettings)
 		out[#out + 1] = {
 			photo = m.photo,
 			id = m.id,
+			-- copies per album: the plugin field gets one id (the oldest copy)
+			fieldId = m.primary,
 			url = PhotoFields.photoUrl(nsid, m.id),
 			fingerprints = {
 				image = Fingerprint.image(CatalogState.developSettings(m.photo), renderSettings),

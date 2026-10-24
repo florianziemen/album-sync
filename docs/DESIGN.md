@@ -172,7 +172,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **Location:**
   - Service default (`sendLocation`) with an album override (on/off).
   - On: `geo.setLocation` (accuracy 16) after upload or on change.
-  - Off: the field is not managed. GPS is stripped from the rendered JPEG (`LR_removeLocationMetadata` **[verify key]**), so Flickr cannot import it from the EXIF.
+  - Off: the field is not managed. GPS is stripped from the rendered JPEG (`LR_removeLocationMetadata`, verified 2026-10-24), so Flickr cannot import it from the EXIF.
 - **Per-field sync** (`RemoteState.lua`). For every photo whose metadata fingerprint changed:
   1. Flickr's current values are read: from the album listing (`photosets.getPhotos`, extras `description,tags,geo`, 500 per call) when the batch has at least 3 such photos, else from `photos.getInfo`.
   2. Values are compared normalized: trimmed text, Flickr-normalized tag sets, privacy value, location to 4 decimals.

@@ -13,7 +13,12 @@ local FIELDS =
 
 local M = {}
 
---- Returns { [photo] = { flickrId, flickrState, imageFingerprint, metadataFingerprint } }.
+--[[
+Plugin fields per photo: { [photo] = { flickrId, flickrState, ... } }.
+Lightroom copies plugin fields to a new virtual copy, so a copy starts with its master's
+Flickr ID and fingerprints. Such copied fields are dropped here (the copy is a new photo for
+Flickr); result[photo].copiedFrom is set to the master's Flickr ID in that case.
+]]
 function M.load(photos)
 	local catalog = LrApplication.activeCatalog()
 	local raw = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, FIELDS)
@@ -21,7 +26,21 @@ function M.load(photos)
 	for _, photo in ipairs(photos) do
 		result[photo] = raw[photo] or {}
 	end
+	M.dropCopiedFields(result)
 	return result
+end
+
+--- See load(): clears fields a virtual copy inherited from its master.
+function M.dropCopiedFields(fieldsByPhoto)
+	for photo, fields in pairs(fieldsByPhoto) do
+		if fields.flickrId and photo:getRawMetadata("isVirtualCopy") then
+			local master = photo:getRawMetadata("masterPhoto")
+			local masterId = master and master:getPropertyForPlugin(_PLUGIN, "flickrId", nil, true)
+			if masterId and tostring(masterId) == tostring(fields.flickrId) then
+				fieldsByPhoto[photo] = { copiedFrom = fields.flickrId, flickrPrivacy = fields.flickrPrivacy }
+			end
+		end
+	end
 end
 
 --- Persist fields for one photo right after a successful Flickr call (crash-safe).
@@ -267,7 +286,11 @@ function M.matcherRecords()
 			byKey[r.uuid] = photo
 			local p = plugin[photo]
 			if p and p.flickrId then
-				linked[r.uuid] = p.flickrId
+				local single = { [photo] = p }
+				M.dropCopiedFields(single)
+				if single[photo].flickrId then
+					linked[r.uuid] = p.flickrId
+				end
 			end
 		end
 	end

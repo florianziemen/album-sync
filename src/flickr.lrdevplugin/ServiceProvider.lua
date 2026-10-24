@@ -367,6 +367,9 @@ local function planBatch(session, renderSettings, settings, collectionSettings)
 		local backfill = #unknown > 0 and CatalogState.remoteIdsFromCollections(unknown) or {}
 		for _, entry in ipairs(entries) do
 			local fields = state[entry.photo]
+			if fields.copiedFrom then
+				event("copiedFields", { photo = entry.photo.localIdentifier, masterFlickrId = fields.copiedFrom })
+			end
 			local backfilled = backfill[entry.photo.localIdentifier]
 			if backfilled then
 				fields.flickrId = backfilled

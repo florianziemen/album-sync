@@ -190,6 +190,12 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - Uploads store `{ lr, sent = lr }`.
 - Metadata schema v2: adds `flickrPrivacy` and `metadataState`, so LR must be restarted.
 
+## 6c. Virtual copies
+
+- Lightroom copies plugin fields to a new virtual copy, so the copy starts with its master's `flickrId` and fingerprints. Observed 2026-10-24: a cropped copy was planned as "replace" of the master's Flickr photo (blocked only by the non-Pro dialog).
+- `CatalogState.load`/`matcherRecords` therefore drop the fields of a virtual copy whose `flickrId` equals its master's (`copiedFields` event). The copy is then a new photo for Flickr, and only its own privacy override is kept.
+- Matching: master and copy share time, names and EXIF. Pixel size, then aspect ratio, tells differently cropped copies apart; otherwise they go to review.
+
 ## 6a. Albums (implemented, verified in LrC 2026-10-24)
 
 - Each published collection is one Flickr album. The default collection "Photostream" has no album. Collection sets are a Lightroom-only grouping (for example by year); they can be nested and have no Flickr counterpart. Lightroom labels them "Album" and "Album Set".

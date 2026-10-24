@@ -1,5 +1,5 @@
 --[[
-File > Plug-in Extras > "Flickr: Check for photos deleted on Flickr…"
+File > Plug-in Extras > "Album Sync: Check for photos deleted on Flickr…"
 
 Compares every Flickr id the catalog knows with the account's photos, confirms each missing one
 with a direct lookup, then asks once: mark only (default rule: never remove or republish

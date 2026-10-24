@@ -1,5 +1,5 @@
 --[[
-File > Plug-in Extras > "Flickr: Review unclear matches…"
+File > Plug-in Extras > "Album Sync: Review unclear matches…"
 
 Works through the review queue of this catalog (read-only on Flickr). Each item first gets
 an EXIF tie-break; otherwise a dialog shows the Flickr photo next to the candidate catalog

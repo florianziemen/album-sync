@@ -286,7 +286,7 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 				}),
 			}),
 			f:static_text({
-				title = "Accounts are added with File > Plug-in Extras > Flickr: Log in. "
+				title = "Accounts are added with File > Plug-in Extras > Album Sync: Log in to Flickr. "
 					.. "Use one Flickr account per catalog.",
 			}),
 		},
@@ -502,7 +502,7 @@ local function renderQueue(entries, renderSettings, ahead)
 end
 
 local GONE_MESSAGE = "This photo no longer exists on Flickr. Use File > Plug-in Extras > "
-	.. "“Flickr: Check for photos deleted on Flickr…” to mark or unlink such photos."
+	.. "“Album Sync: Check for photos deleted on Flickr…” to mark or unlink such photos."
 
 -- Faults for testing recovery (Development section). Each fires once per run.
 local function faultInjector(mode)

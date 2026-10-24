@@ -1,5 +1,5 @@
 --[[
-File > Plug-in Extras > "Flickr: Log in".
+File > Plug-in Extras > "Album Sync: Log in to Flickr".
 
 Asks for API key/secret and the permission to grant (read / write / delete), runs the OAuth
 oob flow, verifies with flickr.test.login, and stores the token for that account in the

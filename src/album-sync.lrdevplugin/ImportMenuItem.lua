@@ -1,5 +1,5 @@
 --[[
-File > Plug-in Extras > "Flickr: Link existing Flickr albums…"
+File > Plug-in Extras > "Album Sync: Link existing Flickr albums…"
 
 Read-only on Flickr. Lists the account's albums (cached), keeps those with photos in this
 catalog's date range, matches their photos (and photostream photos in no album) to catalog
@@ -102,7 +102,7 @@ local function choose(context, plan)
 			}),
 			f:static_text({
 				title = "Nothing is changed on Flickr. Unclear matches are kept for review "
-					.. "(File > Plug-in Extras > Flickr: Review unclear matches…).",
+					.. "(File > Plug-in Extras > Album Sync: Review unclear matches…).",
 			}),
 		}),
 	})

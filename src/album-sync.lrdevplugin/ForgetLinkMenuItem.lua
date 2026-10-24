@@ -1,5 +1,5 @@
 --[[
-File > Plug-in Extras > "Flickr: Forget Flickr link for selected photos"
+File > Plug-in Extras > "Album Sync: Forget Flickr link for selected photos"
 
 Clears the plugin fields (Flickr ID, state, fingerprints, sync state) of the selected photos.
 Catalog only: nothing changes on Flickr, published collections are not touched. Useful after a

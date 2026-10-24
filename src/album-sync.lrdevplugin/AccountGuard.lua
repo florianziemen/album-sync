@@ -62,7 +62,7 @@ function M.verify(deps, creds, lockedNsid, need)
 				class = "auth",
 				message = "No Flickr login for account "
 					.. lockedNsid
-					.. ". Use File > Plug-in Extras > Flickr: Log in.",
+					.. ". Use File > Plug-in Extras > Album Sync: Log in to Flickr.",
 			}
 	end
 	if need and not M.permsAllow(creds.perms, need) then

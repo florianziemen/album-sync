@@ -30,7 +30,7 @@ Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugM
 
 ## Setup
 
-1. **Log in:** **File > Plug-in Extras > Flickr: Log in**. Enter your API key and secret, choose the permission, and authorize in the browser. Paste the code Flickr shows.
+1. **Log in:** **File > Plug-in Extras > Album Sync: Log in to Flickr**. Enter your API key and secret, choose the permission, and authorize in the browser. Paste the code Flickr shows.
    - *Read only* is enough for linking existing photos and can never change anything on Flickr.
    - *Read and write* is needed to publish.
    - *Read, write and delete* additionally allows "re-upload and delete the old photo".
@@ -48,10 +48,10 @@ After a plugin update, open the service settings and click **Save** once. Lightr
 | Upload | Add photos to an album and click **Publish**. |
 | Privacy for one photo | Metadata panel, **Flickr privacy**. It overrides the album setting, which overrides the service default. |
 | Album privacy and location | Right-click the album, **Edit Album**. |
-| Link photos already on Flickr | **Flickr: Link existing Flickr albums…**. It is read-only on Flickr, and only albums with photos in the catalog's date range are shown. |
-| Resolve unclear matches | **Flickr: Review unclear matches…** shows the Flickr preview next to the candidates. |
-| Photos deleted on Flickr | **Flickr: Check for photos deleted on Flickr…**: mark only, or mark and unlink. |
-| Undo a wrong link | Select the photos and run **Flickr: Forget Flickr link for selected photos**. This changes the catalog only. |
+| Link photos already on Flickr | **Album Sync: Link existing Flickr albums…**. It is read-only on Flickr, and only albums with photos in the catalog's date range are shown. |
+| Resolve unclear matches | **Album Sync: Review unclear matches…** shows the Flickr preview next to the candidates. |
+| Photos deleted on Flickr | **Album Sync: Check for photos deleted on Flickr…**: mark only, or mark and unlink. |
+| Undo a wrong link | Select the photos and run **Album Sync: Forget Flickr link for selected photos**. This changes the catalog only. |
 
 Removing a photo from an album removes it from the Flickr album only. Deleting an album collection keeps the album on Flickr.
 

@@ -71,7 +71,8 @@ describe("ImportPlan", function()
 	it("treats Flickr ids linked only in collections as settled", function()
 		local r = ImportPlan.build(albums, photostream, catalog, RANGE, {}, { ["3"] = true })
 		assert.equal(1, r.stats.alreadyLinked)
-		assert.same({}, r.photostream.matches) -- photo 3 is settled, not matched again
+		-- photo 3 is settled, not matched again; photo 4 (no link here) still matches
+		assert.same({ { id = "4", key = "u4", how = "time+title" } }, r.photostream.matches)
 	end)
 
 	it("derives the catalog range and wall-clock times", function()

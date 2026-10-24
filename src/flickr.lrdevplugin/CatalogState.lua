@@ -239,7 +239,8 @@ end
 
 --[[
 Matcher records for every photo in the catalog (videos excluded), read in batches.
-Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }).
+Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }, from the plugin field
+or, failing that, from this plugin's published collections).
 ]]
 function M.matcherRecords()
 	local catalog = LrApplication.activeCatalog()
@@ -293,6 +294,21 @@ function M.matcherRecords()
 				if single[photo].flickrId then
 					linked[r.uuid] = p.flickrId
 				end
+			end
+		end
+	end
+	-- Links recorded only in published collections count too (e.g. photos published before the
+	-- flickrId field existed, or a link whose field write did not complete).
+	local uuidByLocal = {}
+	for _, r in ipairs(records) do
+		uuidByLocal[byKey[r.key].localIdentifier] = r.key
+	end
+	for _, c in ipairs(M.pluginCollections()) do
+		for _, pp in ipairs(c:getPublishedPhotos()) do
+			local rid = pp:getRemoteId()
+			local uuid = rid and uuidByLocal[pp:getPhoto().localIdentifier]
+			if uuid and not linked[uuid] then
+				linked[uuid] = tostring(rid)
 			end
 		end
 	end

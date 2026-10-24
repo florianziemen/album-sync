@@ -27,7 +27,12 @@ describe("TaskPool", function()
 	it("runs at most `size` jobs at once and collects all results", function()
 		local s = scheduler()
 		local active, peak = 0, 0
-		local pool = TaskPool.new(2, { spawn = s.spawn, sleep = s.sleep })
+		-- Jobs yield (slow uploads). In Lua 5.1 plain pcall cannot span a yield (Lightroom
+		-- injects LrTasks.pcall); this stand-in passes results through without catching errors.
+		local function yieldSafePcall(fn)
+			return true, fn()
+		end
+		local pool = TaskPool.new(2, { spawn = s.spawn, sleep = s.sleep, pcall = yieldSafePcall })
 		for i = 1, 5 do
 			pool:submit(i, function()
 				active = active + 1

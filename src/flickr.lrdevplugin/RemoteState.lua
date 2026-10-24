@@ -149,10 +149,10 @@ end
 function M.after(current, remote, pushed)
 	local sent = {}
 	for _, f in ipairs(M.FIELDS) do
-		if pushed[f] then
+		if pushed[f] or not remote then
 			sent[f] = current[f]
 		else
-			sent[f] = remote and remote[f] or current[f]
+			sent[f] = remote[f]
 		end
 	end
 	return { lr = current, sent = sent }

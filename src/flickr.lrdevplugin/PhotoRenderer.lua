@@ -86,11 +86,22 @@ function M.renderer(baseSettings, folder)
 	-- One background task owns each session: iterating renditions() starts its rendering
 	-- exactly once. (doExportOnNewTask + renditions() raced: "startRendering: can not call
 	-- twice on same session".)
-	local function start(photo)
+	-- Same settings without GPS in the file (location not sent to Flickr: Flickr could
+	-- otherwise import it from the EXIF).
+	local noGps = {}
+	for k, v in pairs(settings) do
+		noGps[k] = v
+	end
+	noGps.LR_removeLocationMetadata = true
+
+	-- item: an LrPhoto, or { photo, stripGps }.
+	local function start(item)
+		local photo = item.photo or item
+		local itemSettings = item.stripGps and noGps or settings
 		local job = { started = LrDate.currentTime() }
 		LrTasks.startAsyncTask(function()
 			local ok, err = LrTasks.pcall(function()
-				local session = LrExportSession({ photosToExport = { photo }, exportSettings = settings })
+				local session = LrExportSession({ photosToExport = { photo }, exportSettings = itemSettings })
 				for _, rendition in session:renditions() do
 					job.ok, job.result = rendition:waitForRender()
 				end

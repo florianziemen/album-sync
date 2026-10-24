@@ -43,7 +43,7 @@ Rules for this project:
 | Deleted on Flickr | Mark in the catalog (plugin field). Do not remove the photo and do not republish it. Implemented as the menu command "Flickr: Check for photos deleted on Flickr…". It lists all own photos, then confirms each missing one with `photos.getInfo` (code 1), so an incomplete listing cannot cause a false "deleted". It then asks: *Mark only* (`flickrState=deletedOnFlickr`), or *Mark and unlink* (also clear `flickrId` and fingerprints and remove the stale links from the plugin's collections, so the photos can be published again). During publish, "photo not found" from `setMeta` (code 1) or `addPhoto` (code 2) also marks the photo and points to the command; `removePhoto` code 2 counts as removed. Cost: one `getInfo` per missing photo. |
 | Metadata pushed | Title ← LR title, falling back to the file name without extension. Description ← caption. Tags ← exportable keywords. Location: service default, overridable per collection and in the publish dialog. |
 | Privacy | Service default with a per-collection override. Per-photo changes on Flickr or in Lightroom (plugin field) are respected. |
-| Pull back | Detect title, tag and privacy edits made on Flickr and present them for review. Nothing is written to the catalog automatically. |
+| Pull back | Detect title, tag and privacy edits made on Flickr and present them for review. Nothing is written to the catalog automatically. Implemented as "keep and report" (§6b); writing them back into the catalog is not done. |
 | Conflicts | If both Lightroom and Flickr changed a field: list the conflicts per batch, and the user picks Lightroom, Flickr or skip. |
 | Rendering | Full-size JPEG, quality 90, sRGB by default. LR export sections stay available. |
 | Minimum version | LrC 13. Photos only. |
@@ -162,6 +162,33 @@ Implemented in `Fingerprint.lua`. SHA-1 hex of a canonical serialization; this i
 A "force replace" menu action covers changes that are invisible to the fingerprint, such as process-version rendering differences or a master edited externally.
 
 Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG (to tell virtual copies apart when matching via `getExif`).
+
+## 6b. Privacy, location and Flickr-side edits (implemented)
+
+- **Privacy:**
+  - Service default (`privacy`, plus `hideFromSearch` used on upload). Album override in the collection settings (`viewForCollectionSettings`, read via `getCollectionInfoSummary().collectionSettings`). Photo override in the editable enum field `flickrPrivacy`.
+  - Most specific wins: photo, then album, then service (`Privacy.resolve`). Pushed with `photos.setPerms`.
+  - `metadataThatTriggersRepublish` includes `<plugin id>.flickrPrivacy` **[verify]**.
+- **Location:**
+  - Service default (`sendLocation`) with an album override (on/off).
+  - On: `geo.setLocation` (accuracy 16) after upload or on change.
+  - Off: the field is not managed. GPS is stripped from the rendered JPEG (`LR_removeLocationMetadata` **[verify key]**), so Flickr cannot import it from the EXIF.
+- **Per-field sync** (`RemoteState.lua`). For every photo whose metadata fingerprint changed:
+  1. Flickr's current values are read: from the album listing (`photosets.getPhotos`, extras `description,tags,geo`, 500 per call) when the batch has at least 3 such photos, else from `photos.getInfo`.
+  2. Values are compared normalized: trimmed text, Flickr-normalized tag sets, privacy value, location to 4 decimals.
+  3. Against the stored `metadataState` `{ lr, sent }`, each field is classified:
+
+     | Changed in LR | Changed on Flickr | Result |
+     |---|---|---|
+     | yes | no | push |
+     | no | yes | keep Flickr's value, log it, show a summary dialog |
+     | yes | yes | conflict |
+
+  4. Conflicts are asked once per batch: skip (the default), Lightroom wins, or keep Flickr's values.
+  5. Only the decided fields are sent (`pushMetadata`). The new state is stored after success.
+- **Linked photos** store `{ lr }` only. A later Lightroom change sends just that field, and existing Flickr titles survive.
+- Uploads store `{ lr, sent = lr }`.
+- Metadata schema v2: adds `flickrPrivacy` and `metadataState`, so LR must be restarted.
 
 ## 6a. Albums (implemented, verified in LrC 2026-10-24)
 

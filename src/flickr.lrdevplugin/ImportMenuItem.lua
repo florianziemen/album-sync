@@ -267,7 +267,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 		for i, m in ipairs(matches) do
 			list[i] = { id = m.id, photo = photoByKey[m.key] }
 		end
-		return Linker.links(nsid, list, renderSettings)
+		return Linker.links(nsid, list, renderSettings, service:getPublishSettings())
 	end
 
 	local apply = LrProgressScope({ title = "Flickr: linking albums", functionContext = context })

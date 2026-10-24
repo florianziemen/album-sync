@@ -8,7 +8,8 @@ local LrTasks = import("LrTasks")
 
 local ImportPlan = require("ImportPlan")
 
-local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerprint" }
+local FIELDS =
+	{ "flickrId", "flickrState", "flickrPrivacy", "imageFingerprint", "metadataFingerprint", "metadataState" }
 
 local M = {}
 
@@ -47,6 +48,7 @@ function M.photoMeta(photo)
 		caption = photo:getFormattedMetadata("caption"),
 		-- Respects "Include on Export", parents and synonyms.
 		keywords = photo:getFormattedMetadata("keywordTagsForExport"),
+		gps = photo:getRawMetadata("gps"),
 	}
 end
 
@@ -331,6 +333,9 @@ function M.linkPublished(collection, links, remote)
 				l.photo:setPropertyForPlugin(_PLUGIN, "flickrState", "published")
 				l.photo:setPropertyForPlugin(_PLUGIN, "imageFingerprint", l.fingerprints.image)
 				l.photo:setPropertyForPlugin(_PLUGIN, "metadataFingerprint", l.fingerprints.metadata)
+				if l.metadataState then
+					l.photo:setPropertyForPlugin(_PLUGIN, "metadataState", l.metadataState)
+				end
 			end
 		end, { timeout = 120 })
 		first = false

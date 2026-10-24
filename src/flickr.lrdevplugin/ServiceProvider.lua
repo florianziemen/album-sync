@@ -33,6 +33,9 @@ local JsonFile = require("JsonFile")
 local Fingerprint = require("Fingerprint")
 local PhotoFields = require("PhotoFields")
 local PhotoRenderer = require("PhotoRenderer")
+local Privacy = require("Privacy")
+local RemoteState = require("RemoteState")
+local json = require("json")
 local PublishPlanner = require("PublishPlanner")
 local RateLimiter = require("RateLimiter")
 local RenderQueue = require("RenderQueue")
@@ -72,6 +75,9 @@ local provider = {
 		{ key = "lockedUsername", default = "" },
 		{ key = "dryRun", default = false },
 		{ key = "parallelUploads", default = 3 },
+		{ key = "privacy", default = "private" },
+		{ key = "hideFromSearch", default = true },
+		{ key = "sendLocation", default = false },
 		{ key = "faultMode", default = "none" },
 	},
 }
@@ -85,7 +91,57 @@ function provider.getCollectionBehaviorInfo()
 end
 
 function provider.metadataThatTriggersRepublish()
-	return { default = false, title = true, caption = true, keywords = true, gps = true, dateCreated = true }
+	return {
+		default = false,
+		title = true,
+		caption = true,
+		keywords = true,
+		gps = true,
+		dateCreated = true,
+		[_PLUGIN.id .. ".flickrPrivacy"] = true,
+	}
+end
+
+local function privacyItems(withDefault)
+	local items = {}
+	if withDefault then
+		items[1] = { title = "Service default", value = "default" }
+	end
+	for _, v in ipairs(Privacy.VALUES) do
+		items[#items + 1] = { title = Privacy.TITLES[v], value = v }
+	end
+	return items
+end
+
+-- Per album: privacy and location override the service defaults (photo field wins over both).
+function provider.viewForCollectionSettings(f, _, info)
+	local settings = info.collectionSettings
+	if settings.privacy == nil then
+		settings.privacy = "default"
+	end
+	if settings.location == nil then
+		settings.location = "default"
+	end
+	return f:group_box({
+		title = "Flickr album settings",
+		bind_to_object = settings,
+		f:row({
+			f:static_text({ title = "Privacy:", width = 90 }),
+			f:popup_menu({ value = LrView.bind("privacy"), items = privacyItems(true) }),
+		}),
+		f:row({
+			f:static_text({ title = "Location:", width = 90 }),
+			f:popup_menu({
+				value = LrView.bind("location"),
+				items = {
+					{ title = "Service default", value = "default" },
+					{ title = "Send location", value = "on" },
+					{ title = "Do not send location", value = "off" },
+				},
+			}),
+		}),
+		f:static_text({ title = "A photo's “Flickr privacy” field (Metadata panel) overrides these." }),
+	})
 end
 
 -- Verified account + API client for the service's locked account. `need`: "read"|"write"|"delete".
@@ -232,6 +288,21 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 		},
 		{
+			title = "Visibility",
+			f:row({
+				f:static_text({ title = "Default privacy:", width = 110 }),
+				f:popup_menu({ value = bind("privacy"), items = privacyItems(false) }),
+				f:checkbox({ title = "Hide from public searches", value = bind("hideFromSearch") }),
+			}),
+			f:row({
+				f:checkbox({ title = "Send location (GPS) by default", value = bind("sendLocation") }),
+			}),
+			f:static_text({
+				title = "Albums can override privacy and location (collection settings); "
+					.. "photos can override privacy (Metadata panel, “Flickr privacy”).",
+			}),
+		},
+		{
 			title = "Upload",
 			f:row({
 				f:static_text({ title = "Parallel uploads:", width = 110 }),
@@ -271,7 +342,7 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 end
 
 -- Pre-pass (does not start rendering): plan every rendition and skip all Lightroom renders.
-local function planBatch(session, renderSettings)
+local function planBatch(session, renderSettings, settings, collectionSettings)
 	local entries = {}
 	local ok, err = LrTasks.pcall(function()
 		for _, r in session:renditions() do
@@ -301,7 +372,16 @@ local function planBatch(session, renderSettings)
 				fields.flickrId = backfilled
 				event("backfill", { photo = entry.photo.localIdentifier, id = backfilled })
 			end
-			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo))
+			entry.locationOn = Privacy.locationEnabled(collectionSettings.location, settings.sendLocation == true)
+			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo), {
+				privacy = Privacy.resolve(fields.flickrPrivacy, collectionSettings.privacy, settings.privacy),
+				location = entry.locationOn,
+			})
+			entry.norm = RemoteState.fromFields(entry.fields)
+			if fields.metadataState then
+				local okState, decoded = pcall(json.decode, fields.metadataState)
+				entry.state = okState and decoded or nil
+			end
 			entry.current = {
 				image = Fingerprint.image(CatalogState.developSettings(entry.photo), renderSettings),
 				metadata = Fingerprint.metadata(entry.fields),
@@ -401,7 +481,7 @@ local function renderQueue(entries, renderSettings, ahead)
 	local toRender = {}
 	for _, entry in ipairs(entries) do
 		if PublishPlanner.RENDERS[entry.action] then
-			toRender[#toRender + 1] = entry.photo
+			toRender[#toRender + 1] = { photo = entry.photo, stripGps = not entry.locationOn }
 		end
 	end
 	local folder = PhotoRenderer.makeFolder()
@@ -457,9 +537,13 @@ local function execute(ctx, entry, path)
 		remoteId, e = ctx.uploader:upload(
 			entry.uuid,
 			path,
-			PhotoFields.uploadFields(entry.fields),
+			PhotoFields.uploadFields(entry.fields, { hidden = ctx.hideFromSearch }),
 			{ fault = ctx.faults and ctx.faults.upload }
 		)
+		if remoteId and entry.fields.latitude then
+			local _, geoErr = api:setLocation(remoteId, entry.fields.latitude, entry.fields.longitude)
+			event("location", { id = remoteId, err = geoErr and geoErr.message })
+		end
 		if remoteId and oldId then
 			entry.oldId = oldId
 			local keep = action == "reuploadKeep"
@@ -487,12 +571,9 @@ local function execute(ctx, entry, path)
 		return nil, FlickrResponse.describe(e)
 	end
 
-	local needsMeta = action == "metadata"
-		or action == "adopt"
-		or action == "metadataOutdated"
-		or ((action == "replace" or action == "relink") and entry.storedMetadata ~= entry.current.metadata)
-	if needsMeta then
-		local _, metaErr = api:setMetadata(remoteId, entry.fields)
+	-- Only the fields decided by syncMetadata (changed in Lightroom, or conflicts resolved for it).
+	if entry.push and next(entry.push) then
+		local _, metaErr = api:pushMetadata(remoteId, entry.fields, entry.push)
 		if metaErr then
 			if metaErr.code == 1 then -- setMeta/setTags: Photo not found
 				entry.goneOnFlickr = true
@@ -502,6 +583,162 @@ local function execute(ctx, entry, path)
 		end
 	end
 	return remoteId
+end
+
+-- Actions whose metadata must be compared with Flickr before pushing.
+local SYNC_ACTIONS = { metadata = true, adopt = true, metadataOutdated = true }
+
+local function needsSync(entry)
+	if SYNC_ACTIONS[entry.action] then
+		return true
+	end
+	return (entry.action == "relink" or entry.action == "replace") and entry.storedMetadata ~= entry.current.metadata
+end
+
+local CONFLICT_CHOICES = {
+	{ value = "skip", title = "Skip these photos", detail = "Nothing is sent; they stay in “Modified”." },
+	{ value = "lr", title = "Use Lightroom's values", detail = "Overwrites the changes made on Flickr." },
+	{ value = "flickr", title = "Keep Flickr's values", detail = "Sends only the fields without conflict." },
+}
+
+local function askConflicts(functionContext, conflicted)
+	local perField = {}
+	for _, e in ipairs(conflicted) do
+		for _, f in ipairs(RemoteState.names(e.conflicts)) do
+			perField[f] = (perField[f] or 0) + 1
+		end
+	end
+	local summary = {}
+	for _, f in ipairs(RemoteState.FIELDS) do
+		if perField[f] then
+			summary[#summary + 1] = string.format("%s (%d)", f, perField[f])
+		end
+	end
+	local f = LrView.osFactory()
+	local props = LrBinding.makePropertyTable(functionContext)
+	props.choice = "skip"
+	local rows = {
+		f:static_text({
+			title = string.format(
+				"%d photo(s) were changed both in Lightroom and on Flickr since the last publish: %s.",
+				#conflicted,
+				table.concat(summary, ", ")
+			),
+		}),
+	}
+	for _, c in ipairs(CONFLICT_CHOICES) do
+		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
+		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
+	end
+	rows[#rows + 1] = f:static_text({ title = "Details per photo are in the log (lrflickr.log)." })
+	rows.bind_to_object = props
+	rows.spacing = f:control_spacing()
+	local result = LrDialogs.presentModalDialog({
+		title = "Flickr: conflicting changes",
+		contents = f:column(rows),
+		actionVerb = "Continue",
+	})
+	return result == "ok" and props.choice or "skip"
+end
+
+--[[
+Compare Lightroom and Flickr per field for every photo whose metadata changed (docs/DESIGN.md
+§3 "Conflicts"). Reads Flickr's current values (album listing: 500 per call; else getInfo),
+then sets entry.push (fields to send), entry.remote and entry.flickrOnly; asks once for all
+conflicts. Returns the number of photos with Flickr-only changes (kept).
+]]
+local function syncMetadata(functionContext, api, entries, album)
+	local todo = {}
+	for _, entry in ipairs(entries) do
+		if needsSync(entry) then
+			todo[#todo + 1] = entry
+		end
+	end
+	if #todo == 0 then
+		return 0
+	end
+	local listed = {}
+	if album and album.id and #todo >= 3 then
+		listed = api:albumPhotoStates(album.id) or {}
+	end
+	local conflicted, flickrOnly = {}, 0
+	for _, entry in ipairs(todo) do
+		local id = tostring(entry.publishedId or entry.flickrId)
+		local remote
+		if listed[id] then
+			remote = RemoteState.fromListEntry(listed[id])
+		else
+			local info, err = api:photoInfo(id)
+			if info then
+				remote = RemoteState.fromInfo(info)
+			elseif err and err.code == 1 then
+				entry.goneOnFlickr = true
+				entry.action = "gone"
+			else
+				entry.action = "syncFailed"
+				entry.syncError = "could not read the photo's current values on Flickr: "
+					.. FlickrResponse.describe(err)
+			end
+		end
+		if remote then
+			entry.remote = remote
+			local managed =
+				{ title = true, description = true, tags = true, privacy = true, location = entry.locationOn }
+			local d = RemoteState.diff(entry.norm, entry.state, remote, managed)
+			entry.push, entry.flickrOnly = d.push, d.flickrOnly
+			if next(d.conflicts) then
+				entry.conflicts = d.conflicts
+				conflicted[#conflicted + 1] = entry
+			end
+			for _, f in ipairs(RemoteState.names(d.flickrOnly)) do
+				log:info(
+					string.format(
+						"sync %s: %s changed on Flickr, kept (Flickr %q, Lightroom %q)",
+						id,
+						f,
+						tostring(remote[f]),
+						tostring(entry.norm[f])
+					)
+				)
+			end
+			if next(d.flickrOnly) then
+				flickrOnly = flickrOnly + 1
+			end
+			event("sync", {
+				id = id,
+				push = table.concat(RemoteState.names(d.push), ","),
+				conflicts = table.concat(RemoteState.names(d.conflicts), ","),
+				flickrOnly = table.concat(RemoteState.names(d.flickrOnly), ","),
+			})
+		end
+	end
+	if #conflicted > 0 then
+		for _, entry in ipairs(conflicted) do
+			for _, f in ipairs(RemoteState.names(entry.conflicts)) do
+				log:info(
+					string.format(
+						"conflict %s: %s Flickr %q, Lightroom %q",
+						tostring(entry.publishedId or entry.flickrId),
+						f,
+						tostring(entry.remote[f]),
+						tostring(entry.norm[f])
+					)
+				)
+			end
+		end
+		local choice = askConflicts(functionContext, conflicted)
+		event("conflictChoice", { choice = choice, n = #conflicted })
+		for _, entry in ipairs(conflicted) do
+			if choice == "lr" then
+				for f in pairs(entry.conflicts) do
+					entry.push[f] = true
+				end
+			elseif choice == "skip" then
+				entry.action = "conflictSkipped"
+			end
+		end
+	end
+	return flickrOnly
 end
 
 -- Make sure a photo new to this collection is in its album. Re-uploads already took over the
@@ -619,7 +856,15 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
 	end
 
-	local entries = planBatch(session, renderSettings)
+	local collectionSettings = {}
+	local okInfo, summary = LrTasks.pcall(function()
+		return exportContext.publishedCollection:getCollectionInfoSummary()
+	end)
+	if okInfo and type(summary) == "table" and type(summary.collectionSettings) == "table" then
+		collectionSettings = summary.collectionSettings
+	end
+
+	local entries = planBatch(session, renderSettings, settings, collectionSettings)
 	local actions, byPhoto = {}, {}
 	for i, entry in ipairs(entries) do
 		if entry.action == "upload" and blocked.pending[entry.uuid] then
@@ -663,7 +908,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		album = album,
 		faults = (not dryRun) and faultInjector(settings.faultMode) or nil,
 		publishedCollection = exportContext.publishedCollection,
+		hideFromSearch = settings.hideFromSearch ~= false,
 	}
+	local flickrOnly = syncMetadata(functionContext, api, entries, album)
 
 	-- Lightroom side of a finished action; always on this (the publish) task.
 	local function finish(rendition, entry, remoteId, err)
@@ -675,11 +922,19 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			error("injected fault: crash after upload, before saving (photo " .. tostring(remoteId) .. ")")
 		end
 		-- Persist first: if anything below fails, the next publish relinks instead of re-uploading.
+		-- What Flickr has now, per field, for the next conflict check.
+		local newState
+		if entry.action == "upload" or entry.action == "reuploadKeep" or entry.action == "reuploadDelete" then
+			newState = RemoteState.after(entry.norm, nil, {})
+		elseif entry.remote then
+			newState = RemoteState.after(entry.norm, entry.remote, entry.push or {})
+		end
 		CatalogState.save(rendition.photo, {
 			flickrId = remoteId,
 			flickrState = entry.action == "metadataOutdated" and "imageOutdated" or "published",
 			imageFingerprint = entry.current.image,
 			metadataFingerprint = entry.current.metadata,
+			metadataState = newState and json.encode(newState) or nil,
 		})
 		journal:close(entry.uuid)
 		local url = PhotoFields.photoUrl(user.id, remoteId)
@@ -745,6 +1000,12 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			fail(rendition, entry, "render failed: " .. tostring(msg))
 		elseif entry.action == "leaveModified" then
 			fail(rendition, entry, "Image changed; replacing needs Flickr Pro.")
+		elseif entry.action == "gone" then
+			fail(rendition, entry, GONE_MESSAGE)
+		elseif entry.action == "syncFailed" then
+			fail(rendition, entry, entry.syncError)
+		elseif entry.action == "conflictSkipped" then
+			fail(rendition, entry, "Changed both in Lightroom and on Flickr; skipped (see the log).")
 		elseif entry.action == "waitPending" then
 			fail(
 				rendition,
@@ -777,7 +1038,18 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	end
 	finishResults(pool:drain())
 	LrFileUtils.delete(folder)
-	event("end", { n = #entries })
+	event("end", { n = #entries, flickrOnly = flickrOnly })
+	if flickrOnly > 0 then
+		LrDialogs.message(
+			"Flickr: changes made on Flickr were kept",
+			string.format(
+				"%d photo(s) have changes made on Flickr (title, description, tags, privacy or location) that "
+					.. "Lightroom does not have. They were not overwritten. Details are in lrflickr.log.",
+				flickrOnly
+			),
+			"info"
+		)
+	end
 end
 
 return provider

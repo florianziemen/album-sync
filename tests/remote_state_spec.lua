@@ -113,3 +113,28 @@ describe("RemoteState.diff", function()
 		assert.equal("a b", after.lr.tags)
 	end)
 end)
+
+describe("FlickrApi remote state", function()
+	local FlickrApi = require("FlickrApi")
+	local h = require("tests.helpers")
+
+	it("reads photo info and album entries", function()
+		local deps = h.fakeDeps({
+			{
+				status = 200,
+				body = '{"photo":{"id":"1","title":{"_content":"T"},"visibility":{"ispublic":1,"isfriend":0,"isfamily":0}},'
+					.. '"stat":"ok"}',
+			},
+			{
+				status = 200,
+				body = '{"photoset":{"page":1,"pages":1,"photo":[{"id":"1","title":"T","ispublic":1,"isfriend":0,'
+					.. '"isfamily":0,"tags":"a b","description":{"_content":"D"},"latitude":0,"longitude":0}]},"stat":"ok"}',
+			},
+		})
+		local api = FlickrApi.new(deps, h.CREDS, {})
+		assert.equal("public", RemoteState.fromInfo(api:photoInfo("1")).privacy)
+		local entries = api:albumPhotoStates("A")
+		assert.equal("a b", RemoteState.fromListEntry(entries["1"]).tags)
+		assert.equal("description,tags,geo", deps.calls[2].params.extras)
+	end)
+end)

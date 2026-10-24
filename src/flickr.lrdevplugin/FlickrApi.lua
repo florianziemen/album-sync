@@ -553,6 +553,55 @@ function M:previewUrl(photoId)
 	return best
 end
 
+--- Raw "photo" of flickr.photos.getInfo (for RemoteState.fromInfo), or nil, err.
+function M:photoInfo(photoId)
+	local data, e = self:call("flickr.photos.getInfo", { photo_id = photoId }, nil, function(d)
+		if type(d.photo) ~= "table" then
+			return "photos.getInfo: missing photo"
+		end
+	end)
+	if not data then
+		return nil, e
+	end
+	return data.photo
+end
+
+--[[
+Raw photo list entries of an album with what RemoteState.fromListEntry needs
+(title, privacy flags, extras description, tags, geo): { [photoId] = entry } or nil, err.
+One call per 500 photos.
+]]
+function M:albumPhotoStates(albumId)
+	local out, page = {}, 1
+	local pages
+	repeat
+		local data, e = self:call(
+			"flickr.photosets.getPhotos",
+			{
+				photoset_id = albumId,
+				extras = "description,tags,geo",
+				per_page = "500",
+				page = tostring(page),
+			},
+			nil,
+			function(d)
+				if type(d.photoset) ~= "table" then
+					return "photosets.getPhotos: missing photoset"
+				end
+			end
+		)
+		if not data then
+			return nil, e
+		end
+		pages = tonumber(data.photoset.pages) or 1
+		for _, p in ipairs(data.photoset.photo or {}) do
+			out[tostring(p.id)] = p
+		end
+		page = page + 1
+	until page > pages
+	return out
+end
+
 --- Delete a photo on Flickr (needs perms=delete). Only on explicit user choice.
 function M:deletePhoto(photoId)
 	local _, e = self:call("flickr.photos.delete", { photo_id = photoId }, "POST")

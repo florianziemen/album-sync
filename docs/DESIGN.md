@@ -168,7 +168,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **Privacy:**
   - Service default (`privacy`, plus `hideFromSearch` used on upload). Album override in the collection settings (`viewForCollectionSettings`, read via `getCollectionInfoSummary().collectionSettings`). Photo override in the editable enum field `flickrPrivacy`.
   - Most specific wins: photo, then album, then service (`Privacy.resolve`). Pushed with `photos.setPerms`.
-  - `metadataThatTriggersRepublish` includes `<plugin id>.flickrPrivacy` **[verify]**.
+  - `metadataThatTriggersRepublish` includes `<plugin id>.flickrPrivacy` (verified 2026-10-24). LR re-reads this list only when the service is created or its settings are saved, so after a plugin update that adds trigger fields, the user must open Edit Settings and Save once (README).
 - **Location:**
   - Service default (`sendLocation`) with an album override (on/off).
   - On: `geo.setLocation` (accuracy 16) after upload or on change.

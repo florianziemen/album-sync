@@ -7,7 +7,7 @@ version=$(sed -n 's/.*VERSION = { major = \([0-9]*\), minor = \([0-9]*\), revisi
 [ -n "$version" ] || { echo "cannot read VERSION from $src/Info.lua" >&2; exit 1; }
 rm -rf dist/build
 mkdir -p dist/build/album-sync.lrplugin
-cp "$src"/*.lua "$src"/*.LICENSE dist/build/album-sync.lrplugin/
+cp "$src"/*.lua "$src"/*.LICENSE "$src"/*.png dist/build/album-sync.lrplugin/
 cp LICENSE README.md THIRD_PARTY.md dist/build/album-sync.lrplugin/
 (cd dist/build && rm -f "../album-sync-$version.zip" && zip -qr "../album-sync-$version.zip" album-sync.lrplugin)
 rm -rf dist/build

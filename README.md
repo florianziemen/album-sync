@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="Album Sync logo" width="96" align="right">
+
 # Album Sync
 
 Publish and sync Flickr albums from Adobe Lightroom Classic.

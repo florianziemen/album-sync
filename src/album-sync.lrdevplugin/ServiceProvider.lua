@@ -71,6 +71,7 @@ local provider = {
 	allowFileFormats = { "JPEG" },
 	allowColorSpaces = { "sRGB" },
 	supportsCustomSortOrder = true,
+	small_icon = "small_icon.png", -- Publish Services panel (logo: assets/logo.svg)
 	titleForPublishedCollection = "Album",
 	titleForPublishedCollectionSet = "Album Set",
 	exportPresetFields = {

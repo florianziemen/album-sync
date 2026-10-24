@@ -134,7 +134,7 @@ A "force replace" menu action covers changes that are invisible to the fingerpri
 
 Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG (to tell virtual copies apart when matching via `getExif`).
 
-## 6a. Albums (implemented)
+## 6a. Albums (implemented, verified in LrC 2026-10-24)
 
 - Each published collection is one Flickr album. The default collection "Photostream" has no album. Collection sets are a Lightroom-only grouping (for example by year); they can be nested and have no Flickr counterpart. Lightroom labels them "Album" and "Album Set".
 - **Creation:** an album is created lazily with the first photo published into it, which becomes its cover; the plugin never changes the cover afterwards. The ID and URL are stored with `recordRemoteCollectionId/Url`. An album deleted on Flickr is recreated on the next add (`addPhoto` returns code 1).

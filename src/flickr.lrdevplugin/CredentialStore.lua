@@ -33,6 +33,7 @@ local function prefs()
 end
 
 -- One-time migration of the single-account storage (before multi-account support).
+-- Touches the keychain: call only from tasks (account, saveAccount).
 local function migrateLegacy()
 	local p = prefs()
 	if p.legacyMigrated then
@@ -51,9 +52,9 @@ local function migrateLegacy()
 	p.legacyMigrated = true
 end
 
---- Array of { nsid, username, perms }, sorted by username.
+--- Array of { nsid, username, perms }, sorted by username. Reads prefs only (no keychain),
+--- so it is safe outside tasks, e.g. while building dialogs.
 function M.accounts()
-	migrateLegacy()
 	local out = {}
 	for nsid, a in pairs(prefs().accounts or {}) do
 		out[#out + 1] = { nsid = nsid, username = a.username, perms = a.perms }

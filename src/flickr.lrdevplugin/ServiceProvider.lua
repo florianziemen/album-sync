@@ -179,11 +179,22 @@ function provider.imposeSortOrderOnPublishedCollection(publishSettings, info, re
 	event("reorderAlbum", { album = info.remoteCollectionId, n = #remoteIdSequence, err = e and e.message })
 end
 
--- Pop-up items for the account lock: every logged-in account.
-local function accountItems()
+-- Pop-up items for the account lock: every logged-in account, plus the current lock even if
+-- it is not (yet) in the list. Must not touch the keychain: dialogs are not tasks.
+local function accountItems(current)
 	local items = { { title = "(choose an account)", value = "" } }
-	for _, a in ipairs(CredentialStore.accounts()) do
+	local ok, accounts = pcall(CredentialStore.accounts)
+	if not ok then
+		log:error("account list for dialog failed: " .. tostring(accounts))
+		accounts = {}
+	end
+	local seen = false
+	for _, a in ipairs(accounts) do
+		seen = seen or a.nsid == current
 		items[#items + 1] = { title = string.format("%s (%s, %s)", a.username, a.nsid, a.perms), value = a.nsid }
+	end
+	if current and current ~= "" and not seen then
+		items[#items + 1] = { title = current, value = current }
 	end
 	return items
 end
@@ -191,7 +202,8 @@ end
 function provider.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	propertyTable:addObserver("lockedNsid", function(props, _, nsid)
-		for _, a in ipairs(CredentialStore.accounts()) do
+		local ok, accounts = pcall(CredentialStore.accounts)
+		for _, a in ipairs(ok and accounts or {}) do
 			if a.nsid == nsid then
 				props.lockedUsername = a.username
 			end
@@ -208,7 +220,11 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:row({
 				f:static_text({ title = "Locked to:", width = 90 }),
-				f:popup_menu({ value = bind("lockedNsid"), items = accountItems(), width_in_chars = 40 }),
+				f:popup_menu({
+					value = bind("lockedNsid"),
+					items = accountItems(propertyTable.lockedNsid),
+					width_in_chars = 40,
+				}),
 			}),
 			f:static_text({
 				title = "Accounts are added with File > Plug-in Extras > Flickr: Log in. "

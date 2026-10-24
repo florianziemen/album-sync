@@ -5,7 +5,7 @@ return {
 	LrPluginName = "Album Sync",
 
 	LrExportServiceProvider = {
-		title = "Flickr",
+		title = "Album Sync",
 		file = "ServiceProvider.lua",
 	},
 

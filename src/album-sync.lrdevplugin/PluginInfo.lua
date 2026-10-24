@@ -17,7 +17,7 @@ return {
 					fill_horizontal = 1,
 				}),
 				f:static_text({
-					title = "Start with File > Plug-in Extras > Flickr: Log in, then set up the “Flickr” publish service.",
+					title = "Start with File > Plug-in Extras > Flickr: Log in, then set up the “Album Sync” publish service.",
 					fill_horizontal = 1,
 				}),
 				f:push_button({

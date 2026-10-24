@@ -36,7 +36,7 @@ Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugM
    - *Read, write and delete* additionally allows "re-upload and delete the old photo".
 
    You can log in several accounts. Each publish service is locked to one.
-2. **Publish service:** in the Publish Services panel, set up **Flickr**. Under *Flickr account*, choose the account, then set default privacy and location. **Use one Flickr account per catalog.**
+2. **Publish service:** in the Publish Services panel, set up **Album Sync**. Under *Flickr account*, choose the account, then set default privacy and location. **Use one Flickr account per catalog.**
 3. **Albums:** right-click the service and choose **Create Album**. Album sets are a Lightroom-only grouping.
 
 After a plugin update, open the service settings and click **Save** once. Lightroom only reads which fields trigger republishing when the settings are saved.

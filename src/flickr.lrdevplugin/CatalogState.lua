@@ -259,6 +259,8 @@ function M.matcherRecords()
 				iso = iso,
 				names = names,
 				aspect = (dims and dims.width and dims.height and dims.height > 0) and dims.width / dims.height or nil,
+				w = dims and dims.width,
+				h = dims and dims.height,
 			}
 			byKey[r.uuid] = photo
 			local p = plugin[photo]

@@ -1,18 +1,21 @@
 --[[
 Matches Flickr photos to catalog photos (docs/DESIGN.md §7, tiers 2 and 3a).
 
-catalog: array of { key, taken, names, aspect }
+catalog: array of { key, taken, names, aspect, w, h }
   taken   wall-clock "YYYY-MM-DD HH:MM:SS" (LR capture time, local, seconds)
   names   array of file names (current and original/preserved), any case, with extension
   aspect  width/height of the cropped photo (optional)
+  w, h    cropped pixel size (optional; equals Flickr's size for full-size exports)
 flickr: array of { id, title, taken, takenUnknown, w, h } (FlickrApi.photoRecord)
 
 Rules: candidates = catalog photos taken in the same second.
   exactly one candidate whose name equals the title (case-insensitive, extension ignored)
     -> match "time+title"; several (virtual copies) -> the one with the same aspect ratio
     -> match "time+title+aspect"
+  otherwise exactly one candidate with the same pixel size (±2 px, either orientation)
+    -> match "time+size" (tells apart crops that keep the aspect ratio)
   otherwise exactly one candidate with the same aspect ratio (1%, either orientation)
-    -> match "time+aspect"
+    -> match "time+aspect" (resized exports)
   candidates but no unique decision -> review
   no candidates -> notInCatalog (ignored)
 A catalog photo matched by several Flickr photos (duplicates on Flickr) -> all to review.
@@ -24,6 +27,37 @@ M.ASPECT_TOLERANCE = 0.01
 
 local function base(name)
 	return ((name or ""):lower():gsub("%.[^.]*$", ""))
+end
+
+M.SIZE_TOLERANCE = 2 -- pixels
+
+-- Same pixel size (either orientation): exact for full-size exports, even for crops that
+-- keep the aspect ratio. nil when unknown.
+local function sizeMatches(p, c)
+	if not (p.w and p.h and c.w and c.h) then
+		return nil
+	end
+	local t = M.SIZE_TOLERANCE
+	return (math.abs(p.w - c.w) <= t and math.abs(p.h - c.h) <= t)
+		or (math.abs(p.w - c.h) <= t and math.abs(p.h - c.w) <= t)
+end
+
+-- Narrow `cands` with `test`: returns the unique hit, or nil plus the hits and whether any
+-- candidate was undecidable.
+local function unique(cands, test)
+	local hits, unknown = {}, false
+	for _, c in ipairs(cands) do
+		local m = test(c)
+		if m == nil then
+			unknown = true
+		elseif m then
+			hits[#hits + 1] = c
+		end
+	end
+	if #hits == 1 and not unknown then
+		return hits[1], hits, unknown
+	end
+	return nil, hits, unknown
 end
 
 local function aspectMatches(p, c)
@@ -88,29 +122,30 @@ function M.match(catalog, flickr)
 				match(p, byTitle[1], "time+title")
 			elseif #byTitle > 1 then
 				-- Virtual copies share time and name; a different crop can still tell them apart.
-				local byBoth = {}
-				for _, c in ipairs(byTitle) do
-					if aspectMatches(p, c) then
-						byBoth[#byBoth + 1] = c
-					end
-				end
-				if #byBoth == 1 then
-					match(p, byBoth[1], "time+title+aspect")
+				local bySize = unique(byTitle, function(c)
+					return sizeMatches(p, c)
+				end)
+				local byAspect = unique(byTitle, function(c)
+					return aspectMatches(p, c)
+				end)
+				if bySize then
+					match(p, bySize, "time+title+size")
+				elseif byAspect then
+					match(p, byAspect, "time+title+aspect")
 				else
-					review(p, #byBoth > 1 and byBoth or byTitle, "same time and title (virtual copies?)")
+					review(p, byTitle, "same time and title (virtual copies?)")
 				end
 			else
-				local byAspect, unknown = {}, false
-				for _, c in ipairs(cands) do
-					local m = aspectMatches(p, c)
-					if m == nil then
-						unknown = true
-					elseif m then
-						byAspect[#byAspect + 1] = c
-					end
-				end
-				if #byAspect == 1 and not unknown then
-					match(p, byAspect[1], "time+aspect")
+				local bySize = unique(cands, function(c)
+					return sizeMatches(p, c)
+				end)
+				local hit, byAspect, unknown = unique(cands, function(c)
+					return aspectMatches(p, c)
+				end)
+				if bySize then
+					match(p, bySize, "time+size")
+				elseif hit then
+					match(p, hit, "time+aspect")
 				elseif #byAspect == 0 and not unknown then
 					review(p, cands, "same time, different crop or format")
 				else

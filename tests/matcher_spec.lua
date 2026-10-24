@@ -44,6 +44,24 @@ describe("Matcher", function()
 		assert.same({ "B" }, r.review[2].candidates)
 	end)
 
+	it("tells crops with the same aspect ratio apart by pixel size", function()
+		local catalog = {
+			{ key = "Full", taken = T, names = { "x.CR3" }, aspect = 1.5, w = 6000, h = 4000 },
+			{ key = "Crop", taken = T, names = { "y.CR3" }, aspect = 1.5, w = 4500, h = 3000 },
+		}
+		local r = Matcher.match(catalog, { photo("1", "renamed", T, 3000, 4500) })
+		assert.same({ key = "Crop", how = "time+size" }, r.matches["1"])
+	end)
+
+	it("tells virtual copies with the same ratio apart by pixel size", function()
+		local catalog = {
+			{ key = "M", taken = T, names = { "IMG_1.CR3" }, aspect = 1.5, w = 6000, h = 4000 },
+			{ key = "V", taken = T, names = { "IMG_1.CR3" }, aspect = 1.5, w = 3000, h = 2000 },
+		}
+		local r = Matcher.match(catalog, { photo("1", "IMG_1", T, 3000, 2000) })
+		assert.same({ key = "V", how = "time+title+size" }, r.matches["1"])
+	end)
+
 	it("tells virtual copies apart by crop", function()
 		local catalog = {
 			{ key = "M", taken = T, names = { "IMG_1.CR3" }, aspect = 1.5 },

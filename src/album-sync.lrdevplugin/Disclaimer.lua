@@ -18,8 +18,9 @@ M.VERSION = 1
 M.TEXT = 'Album Sync is free software, provided "as is" without warranty of any kind (MIT License). '
 	.. "It uploads photos to Flickr, changes their titles, descriptions, tags, privacy, location and albums, "
 	.. "and writes to your Lightroom catalog. Bugs, changes of the Flickr API or wrong settings can lead to "
-	.. "lost, duplicated, mislabelled or unintentionally public photos. There is no guarantee for your photos "
-	.. "or data: keep backups of your catalog and originals. You use it at your own risk.\n\n"
+	.. "lost, duplicated, mislabelled or unintentionally public photos and other problems. There is no "
+	.. "guarantee for your photos or data: "
+	.. "Keep backups of your catalog and originals. You use it at your own risk.\n\n"
 	.. "Album Sync is an independent project. It is not affiliated with, endorsed or supported by Adobe Inc. "
 	.. "or SmugMug, Inc. (Flickr). This product uses the Flickr API but is not endorsed or certified by "
 	.. "SmugMug, Inc. Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugMug, Inc."

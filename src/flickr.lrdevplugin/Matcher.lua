@@ -4,6 +4,7 @@ Matches Flickr photos to catalog photos (docs/DESIGN.md §7, tiers 2 and 3a).
 catalog: array of { key, taken, names, aspect, w, h }
   taken   wall-clock "YYYY-MM-DD HH:MM:SS" (LR capture time, local, seconds)
   names   array of file names (current and original/preserved), any case, with extension
+  title   Lightroom title (photos uploaded by this plugin carry it on Flickr)
   aspect  width/height of the cropped photo (optional)
   w, h    cropped pixel size (optional; equals Flickr's size for full-size exports)
 flickr: array of { id, title, taken, takenUnknown, w, h } (FlickrApi.photoRecord)
@@ -24,6 +25,10 @@ A catalog photo matched by several Flickr photos (duplicates on Flickr) -> all t
 local M = {}
 
 M.ASPECT_TOLERANCE = 0.01
+
+local function trim(s)
+	return ((s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
 
 local function base(name)
 	return ((name or ""):lower():gsub("%.[^.]*$", ""))
@@ -61,10 +66,12 @@ local function unique(cands, test)
 end
 
 local function aspectMatches(p, c)
-	if not (p.w and p.h and p.h > 0 and c.aspect and c.aspect > 0) then
+	-- Original size if known, else the "large" rendition (same aspect ratio).
+	local w, h = p.w or p.lw, p.h or p.lh
+	if not (w and h and h > 0 and c.aspect and c.aspect > 0) then
 		return nil -- unknown
 	end
-	local r = p.w / p.h
+	local r = w / h
 	local tol = M.ASPECT_TOLERANCE
 	return math.abs(r - c.aspect) / c.aspect <= tol or math.abs(1 / r - c.aspect) / c.aspect <= tol
 end
@@ -109,13 +116,17 @@ function M.match(catalog, flickr)
 			result.notInCatalog[#result.notInCatalog + 1] = p.id
 		else
 			local title = base(p.title)
+			local exactTitle = trim(p.title):lower()
 			local byTitle = {}
 			for _, c in ipairs(cands) do
+				local hit = false
 				for _, n in ipairs(c.names or {}) do
-					if title ~= "" and base(n) == title then
-						byTitle[#byTitle + 1] = c
-						break
-					end
+					hit = hit or (title ~= "" and base(n) == title)
+				end
+				-- Photos uploaded by this plugin carry the Lightroom title.
+				hit = hit or (exactTitle ~= "" and c.title and trim(c.title):lower() == exactTitle)
+				if hit then
+					byTitle[#byTitle + 1] = c
 				end
 			end
 			if #byTitle == 1 then

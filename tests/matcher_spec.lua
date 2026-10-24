@@ -44,6 +44,16 @@ describe("Matcher", function()
 		assert.same({ "B" }, r.review[2].candidates)
 	end)
 
+	it("matches the Lightroom title (plugin uploads) and uses the large size for the ratio", function()
+		local catalog = {
+			{ key = "M", taken = T, names = { "x.CR3" }, title = "eee", aspect = 1.5 },
+			{ key = "V", taken = T, names = { "x.CR3" }, title = "eee", aspect = 1.0 },
+		}
+		local copy = { id = "1", title = "EEE ", taken = T, lw = 1024, lh = 1024 } -- free account: no o_dims
+		local r = Matcher.match(catalog, { copy })
+		assert.same({ key = "V", how = "time+title+aspect" }, r.matches["1"])
+	end)
+
 	it("tells crops with the same aspect ratio apart by pixel size", function()
 		local catalog = {
 			{ key = "Full", taken = T, names = { "x.CR3" }, aspect = 1.5, w = 6000, h = 4000 },

@@ -335,6 +335,24 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	apply:done()
 
 	local queue = ReviewQueue.new(JsonFile.storage("review-" .. JsonFile.catalogKey() .. ".json"))
+	-- Photos linked now are no longer unclear (they may be queued from an earlier run).
+	local resolvedNow = 0
+	local function dequeue(matches)
+		for _, m in ipairs(matches) do
+			if queue:remove(m.id) then
+				resolvedNow = resolvedNow + 1
+			end
+		end
+	end
+	for _, t in ipairs(targets) do
+		dequeue(t.plan.matches)
+	end
+	if selected.photostream then
+		dequeue(plan.photostream.matches)
+	end
+	if resolvedNow > 0 then
+		log:info(string.format("import: %d queued item(s) resolved by this run", resolvedNow))
+	end
 	local added = queue:add(plan.review)
 	for _, item in ipairs(plan.review) do
 		log:info(

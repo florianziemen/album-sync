@@ -54,7 +54,7 @@ describe("FlickrApi album listing", function()
 		assert.same({
 			{ id = "1", title = "IMG_1", taken = "2019-05-01 10:00:00", takenUnknown = false, w = 6000, h = 4000 },
 		}, api:albumPhotos("7"))
-		assert.equal("date_taken,o_dims", deps.calls[2].params.extras)
+		assert.equal("date_taken,o_dims,url_l", deps.calls[2].params.extras)
 	end)
 end)
 

@@ -248,7 +248,8 @@ function M.matcherRecords()
 		photos,
 		{ "uuid", "dateTimeOriginal", "dateTimeOriginalISO8601", "croppedDimensions", "isVideo" }
 	)
-	local fmt = catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName", "cameraSerialNumber" })
+	local fmt =
+		catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName", "cameraSerialNumber", "title" })
 	local plugin = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
 	local records, byKey, linked = {}, {}, {}
 	for _, photo in ipairs(photos) do
@@ -279,6 +280,7 @@ function M.matcherRecords()
 				serial = (f.cameraSerialNumber and f.cameraSerialNumber ~= "") and f.cameraSerialNumber or nil,
 				iso = iso,
 				names = names,
+				title = (f.title and f.title ~= "") and f.title or nil,
 				aspect = (dims and dims.width and dims.height and dims.height > 0) and dims.width / dims.height or nil,
 				w = dims and dims.width,
 				h = dims and dims.height,

@@ -115,12 +115,15 @@ local Cache = {}
 Cache.__index = Cache
 M.Cache = Cache
 
+-- Bump when photo records change shape: older caches are refetched.
+Cache.VERSION = 2
+
 function Cache.new(storage)
-	local self = setmetatable({ storage = storage, data = { version = 1, albums = {} } }, Cache)
+	local self = setmetatable({ storage = storage, data = { version = Cache.VERSION, albums = {} } }, Cache)
 	local raw = storage.load()
 	if raw and raw ~= "" then
 		local ok, decoded = pcall(json.decode, raw)
-		if ok and type(decoded) == "table" and type(decoded.albums) == "table" then
+		if ok and type(decoded) == "table" and decoded.version == Cache.VERSION and type(decoded.albums) == "table" then
 			self.data = decoded
 		end
 	end

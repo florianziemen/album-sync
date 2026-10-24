@@ -414,13 +414,17 @@ local function photoRecord(p)
 		title = content(p.title) or "",
 		taken = p.datetaken,
 		takenUnknown = tonumber(p.datetakenunknown) == 1,
+		-- Original size (owner + Pro: free accounts don't get it since 2025).
 		w = tonumber(p.o_width),
 		h = tonumber(p.o_height),
+		-- "Large" rendition size: aspect ratio when the original size is unavailable.
+		lw = tonumber(p.width_l),
+		lh = tonumber(p.height_l),
 	}
 end
 M.photoRecord = photoRecord
 
-M.PHOTO_EXTRAS = "date_taken,o_dims"
+M.PHOTO_EXTRAS = "date_taken,o_dims,url_l"
 
 --- All own albums: array of { id, title, count, updated, created } or nil, err.
 function M:albums()

@@ -281,6 +281,65 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 		return true
 	end
 
+	-- Pre-pass: Flickr photos another publish service (Lightroom's own Flickr service) recorded
+	-- as uploaded from a specific catalog photo. Flickr ids are global, so this is exact.
+	local recorded = {}
+	for _, other in ipairs(others) do
+		for _, l in ipairs(other.links) do
+			if tostring(l.url or ""):find("flickr.com", 1, true) then
+				recorded[l.id] = recorded[l.id] or l
+			end
+		end
+	end
+	-- Consistency check of earlier links against that record (log only).
+	local agree, disagree = 0, 0
+	for _, pl in ipairs(publishedLinks) do
+		local l = recorded[pl.id]
+		if l and l.key == pl.key then
+			agree = agree + 1
+		elseif l then
+			disagree = disagree + 1
+			log:info(
+				string.format(
+					"review: flickr=%s is linked to %s but was published from %s (%s)",
+					pl.id,
+					pl.key,
+					l.key,
+					tostring(l.photo:getFormattedMetadata("fileName"))
+				)
+			)
+		end
+	end
+	log:info(string.format("review: links vs. publish service record: %d agree, %d differ", agree, disagree))
+	local byService = 0
+	for _, item in ipairs(items) do
+		local l = recorded[tostring(item.id)]
+		if l and not linkedFlickr[tostring(item.id)] then
+			if linked[l.key] then
+				log:info(
+					string.format(
+						"review: flickr=%s was published from %s, which is linked to flickr=%s already",
+						item.id,
+						l.key,
+						tostring(linked[l.key])
+					)
+				)
+			else
+				photoByKey[l.key] = photoByKey[l.key] or l.photo
+				if link(item, l.key, "recorded by publish service") then
+					byService = byService + 1
+				end
+			end
+		end
+	end
+	if byService > 0 then
+		auto = auto + byService
+		items = {}
+		for i, item in ipairs(queue:items()) do
+			items[i] = item
+		end
+	end
+
 	-- Pre-pass: several Flickr copies of one catalog photo with identical file sizes are the same
 	-- file uploaded more than once. Keep the oldest copy (or the one linked already), list the rest.
 	local groups = DuplicateCheck.groups(items, linked)
@@ -485,7 +544,7 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 	LrDialogs.message(
 		"Album Sync: review",
 		string.format(
-			"Linked %d photo(s) (%d automatically by EXIF), removed %d, %d were already linked. %d left for later.%s",
+			"Linked %d photo(s) (%d automatically), removed %d, %d were already linked. %d left for later.%s",
 			linkedCount,
 			auto,
 			dismissed,

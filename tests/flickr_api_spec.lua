@@ -66,6 +66,27 @@ describe("FlickrApi", function()
 		assert.equal("replace_not_pro", e.class)
 	end)
 
+	it("pushes metadata with setMeta then setTags", function()
+		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"ok"}' }, { status = 200, body = '{"stat":"ok"}' } })
+		local ok = FlickrApi.new(deps, h.CREDS, ACCESS)
+			:setMetadata("42", { title = "T", description = "D", tags = '"New York" cat' })
+		assert.is_true(ok)
+		assert.equal("flickr.photos.setMeta", deps.calls[1].params.method)
+		assert.equal("T", deps.calls[1].params.title)
+		assert.equal("flickr.photos.setTags", deps.calls[2].params.method)
+		assert.equal('"New York" cat', deps.calls[2].params.tags)
+		assert.equal("POST", deps.calls[2].method)
+	end)
+
+	it("stops after a failing setMeta", function()
+		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"fail","code":1,"message":"Photo not found"}' } })
+		local ok, e = FlickrApi.new(deps, h.CREDS, ACCESS)
+			:setMetadata("42", { title = "T", description = "", tags = "" })
+		assert.is_nil(ok)
+		assert.equal(1, e.code)
+		assert.equal(1, #deps.calls)
+	end)
+
 	it("reads Pro status", function()
 		local deps = h.fakeDeps({
 			{ status = 200, body = '{"person":{"id":"1@N07","ispro":0},"stat":"ok"}' },

@@ -119,7 +119,7 @@ Implemented in `Fingerprint.lua`. SHA-1 hex of a canonical serialization; this i
   - the render-relevant export settings (`LR_format`, `LR_jpeg_*`, `LR_size_*`, `LR_outputSharpening*`, watermark, color space, bit depth)
   - the scheme version
   - The master file's size and modification time are deliberately *not* included: writing metadata to DNG/JPEG masters would trigger false replaces.
-- **Metadata fingerprint:** the fields as sent (currently title and description; tags, location and privacy will follow).
+- **Metadata fingerprint:** the fields as sent: title, description, and tags from `keywordTagsForExport` (sent with `setTags`, multi-word tags quoted). Location and privacy will follow.
 - **Planner** (`PublishPlanner.lua`): upload / relink (already on Flickr via `flickrId`) / replace / metadata / adopt (published before fingerprints existed: push metadata and store fingerprints) / noop.
 - **Replace without Pro:** one dialog per batch with two choices. "Update metadata only" sets `flickrState=imageOutdated`. "Leave as modified" sends nothing for those photos.
 - **Remote fingerprint:** the same metadata fields as returned by Flickr after the push. Used to detect edits made on Flickr.
@@ -188,7 +188,7 @@ Observed with live probes (2026-10-24):
 | GET on the upload endpoint | 200 | XML `code=116 "The POST method is now required for all setters"` |
 | Upload or replace with a bad key | 200 | XML `code=100` (key checked before the photo) |
 
-Every response carries the `x-flickr-api-request` header, which should be logged.
+REST responses carry the `x-flickr-api-request` header, which is logged. Upload responses do **not** carry it (observed 2026-10-24).
 
 **Rules.**
 

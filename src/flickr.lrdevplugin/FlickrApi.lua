@@ -133,6 +133,24 @@ function M:replace(filePath, photoId)
 	return id, e
 end
 
+--- Push title, description and tags (fields from PhotoFields.metadataFields).
+--- setTags replaces all tags on the photo. Returns true or nil, err.
+function M:setMetadata(photoId, fields)
+	local _, e = self:call(
+		"flickr.photos.setMeta",
+		{ photo_id = photoId, title = fields.title, description = fields.description },
+		"POST"
+	)
+	if e then
+		return nil, e
+	end
+	_, e = self:call("flickr.photos.setTags", { photo_id = photoId, tags = fields.tags or "" }, "POST")
+	if e then
+		return nil, e
+	end
+	return true
+end
+
 --- Returns true/false for Pro status of `nsid`, or nil, err.
 function M:isPro(nsid)
 	local data, e = self:call("flickr.people.getInfo", { user_id = nsid }, nil, function(d)

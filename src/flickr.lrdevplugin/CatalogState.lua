@@ -42,6 +42,8 @@ function M.photoMeta(photo)
 		title = photo:getFormattedMetadata("title"),
 		fileName = photo:getFormattedMetadata("fileName"),
 		caption = photo:getFormattedMetadata("caption"),
+		-- Respects "Include on Export", parents and synonyms.
+		keywords = photo:getFormattedMetadata("keywordTagsForExport"),
 	}
 end
 

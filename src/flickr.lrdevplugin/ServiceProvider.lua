@@ -238,11 +238,7 @@ local function execute(api, entry, path)
 		or action == "metadataOutdated"
 		or ((action == "replace" or action == "relink") and entry.storedMetadata ~= entry.current.metadata)
 	if needsMeta then
-		local _, metaErr = api:call(
-			"flickr.photos.setMeta",
-			{ photo_id = remoteId, title = entry.fields.title, description = entry.fields.description },
-			"POST"
-		)
+		local _, metaErr = api:setMetadata(remoteId, entry.fields)
 		if metaErr then
 			return nil, FlickrResponse.describe(metaErr)
 		end

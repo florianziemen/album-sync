@@ -7,18 +7,27 @@ describe("PhotoFields", function()
 		assert.equal("a.b", PhotoFields.title({ fileName = "a.b.jpg" }))
 	end)
 
-	it("maps caption to description", function()
+	it("converts exportable keywords to Flickr tags", function()
+		assert.equal('Deckel "New York" cat', PhotoFields.tags("Deckel, New York, cat"))
+		assert.equal("a b", PhotoFields.tags(" a ,b, A,, "))
+		assert.equal('"say hi"', PhotoFields.tags('say "hi"'))
+		assert.equal("", PhotoFields.tags(nil))
+		assert.equal("", PhotoFields.tags(""))
+	end)
+
+	it("maps caption to description and keywords to tags", function()
 		assert.same(
-			{ title = "T", description = "C" },
-			PhotoFields.metadataFields({ title = "T", fileName = "x.jpg", caption = "C" })
+			{ title = "T", description = "C", tags = "Deckel" },
+			PhotoFields.metadataFields({ title = "T", fileName = "x.jpg", caption = "C", keywords = "Deckel" })
 		)
 	end)
 
-	it("uploads private and hidden by default, without tags", function()
-		local f = PhotoFields.uploadFields({ fileName = "x.jpg" })
+	it("uploads private and hidden by default", function()
+		local f = PhotoFields.uploadFields(PhotoFields.metadataFields({ fileName = "x.jpg", keywords = "k" }))
 		assert.same({
 			title = "x",
 			description = "",
+			tags = "k",
 			is_public = "0",
 			is_friend = "0",
 			is_family = "0",
@@ -27,7 +36,7 @@ describe("PhotoFields", function()
 	end)
 
 	it("applies privacy settings", function()
-		local f = PhotoFields.uploadFields({ fileName = "x" }, { isPublic = true, hidden = false })
+		local f = PhotoFields.uploadFields({ title = "x" }, { isPublic = true, hidden = false })
 		assert.equal("1", f.is_public)
 		assert.equal("1", f.hidden)
 	end)

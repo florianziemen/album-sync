@@ -46,7 +46,33 @@ function M.build(albums, photostream, catalog, range, linked)
 		add(p)
 	end
 
-	local r = Matcher.match(catalog, all)
+	-- Pairs linked earlier (this catalog) are settled: leave both sides out of matching, so
+	-- re-running the import neither re-queues them nor offers them as candidates.
+	local linkedIds = {}
+	for _, id in pairs(linked) do
+		linkedIds[tostring(id)] = true
+	end
+	local open, alreadyLinked = {}, 0
+	for _, p in ipairs(all) do
+		if linkedIds[p.id] then
+			alreadyLinked = alreadyLinked + 1
+		else
+			open[#open + 1] = p
+		end
+	end
+	local present = {}
+	for _, p in ipairs(all) do
+		present[p.id] = true
+	end
+	local candidates = {}
+	for _, c in ipairs(catalog) do
+		local id = linked[c.key]
+		if not (id and present[tostring(id)]) then
+			candidates[#candidates + 1] = c
+		end
+	end
+
+	local r = Matcher.match(candidates, open)
 
 	-- A photo already linked to a different Flickr id is a conflict, not a match.
 	local review = {}
@@ -120,6 +146,7 @@ function M.build(albums, photostream, catalog, range, linked)
 		albumsInRange = #inRangeAlbums,
 		flickrInRange = #all,
 		matched = matched,
+		alreadyLinked = alreadyLinked,
 		review = #review,
 		notInCatalog = #r.notInCatalog,
 	}

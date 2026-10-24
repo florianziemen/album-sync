@@ -46,10 +46,26 @@ describe("ImportPlan", function()
 		assert.truthy(r.review[1].reason:find("already linked to Flickr photo 777", 1, true))
 		assert.equal("IMG_4", r.review[1].title)
 		assert.equal("2019-03-01 13:00:00", r.review[1].taken)
-		assert.same(
-			{ albumsTotal = 3, albumsInRange = 2, flickrInRange = 5, matched = 3, review = 1, notInCatalog = 1 },
-			r.stats
-		)
+		assert.same({
+			albumsTotal = 3,
+			albumsInRange = 2,
+			flickrInRange = 5,
+			matched = 3,
+			alreadyLinked = 0,
+			review = 1,
+			notInCatalog = 1,
+		}, r.stats)
+	end)
+
+	it("leaves pairs linked earlier out of matching", function()
+		local r = ImportPlan.build(albums, photostream, catalog, RANGE, { u1 = "1", u4 = "4" })
+		assert.equal(2, r.stats.alreadyLinked)
+		assert.equal(0, r.stats.review) -- u4 <-> 4 is settled, not a conflict any more
+		for _, a in ipairs(r.albums) do
+			for _, m in ipairs(a.matches) do
+				assert.are_not.equal("1", m.id)
+			end
+		end
 	end)
 
 	it("derives the catalog range and wall-clock times", function()

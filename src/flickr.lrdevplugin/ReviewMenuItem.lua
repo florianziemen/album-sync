@@ -146,7 +146,11 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), "lrflickr-review")
 	LrFileUtils.createAllDirectories(dir)
 
-	local linkedCount, dismissed, auto = 0, 0, 0
+	local linkedCount, dismissed, auto, settled = 0, 0, 0, 0
+	local linkedFlickr = {}
+	for _, id in pairs(linked) do
+		linkedFlickr[tostring(id)] = true
+	end
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
 		local where, conflicts = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
@@ -163,12 +167,14 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 			LrDialogs.message("Flickr: already linked", msg, "warning")
 		end
 		if where == "" then
-			return
+			return false
 		end
 		linked[key] = item.id -- never offer this photo again in this session
+		linkedFlickr[tostring(item.id)] = true
 		queue:remove(item.id)
 		linkedCount = linkedCount + 1
 		log:info(string.format("review: linked flickr=%s to %s (%s) in %s", item.id, key, how, where))
+		return true
 	end
 
 	for i, item in ipairs(items) do
@@ -186,7 +192,11 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 				}
 			end
 		end
-		if #candidates == 0 then
+		if linkedFlickr[tostring(item.id)] then
+			queue:remove(item.id) -- linked meanwhile (earlier review or import)
+			settled = settled + 1
+			log:info("review: flickr=" .. item.id .. " is already linked; removed from the queue")
+		elseif #candidates == 0 then
 			queue:remove(item.id) -- candidates no longer in the catalog
 			log:info("review: dropped flickr=" .. item.id .. " (no candidates left)")
 		else
@@ -204,8 +214,9 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 				end
 			end
 			if resolved then
-				auto = auto + 1
-				link(item, resolved, how)
+				if link(item, resolved, how) then
+					auto = auto + 1
+				end
 			else
 				local choice = ask(context, item, i, #items, candidates, preview(api, item.id, dir), nsid)
 				if choice == nil then
@@ -225,10 +236,11 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	LrDialogs.message(
 		"Flickr: review",
 		string.format(
-			"Linked %d photo(s) (%d automatically by EXIF), removed %d. %d left for later.",
+			"Linked %d photo(s) (%d automatically by EXIF), removed %d, %d were already linked. %d left for later.",
 			linkedCount,
 			auto,
 			dismissed,
+			settled,
 			#queue:items()
 		),
 		"info"

@@ -131,6 +131,7 @@ Per batch, in `processRenderedPhotos`:
 **Results (dummy account, about 11 MB JPEGs):**
 - Sequential: 10 photos in 52 s. 3 parallel: 10 photos in 32 s (1.6×). LR accepts `recordPublishedPhotoId` in completion order.
 - All three injected faults recovered without duplicates. After the crash fault, the in-flight second upload finished in the background, and both photos were linked via the journal on the next run.
+- Crash with 3 parallel workers and 5 photos: one upload done plus 3 in flight completed after the abort. The next run reconciled 4 (relink) and uploaded the 1 that had never started, with no duplicates.
 
 **Open improvements:**
 - Poll all open tickets in one `checkTickets` call: per-worker polling consumes the rate limit, and album adds waited up to 2.8 s.

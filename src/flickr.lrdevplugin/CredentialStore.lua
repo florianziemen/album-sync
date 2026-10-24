@@ -11,12 +11,17 @@ local PREFIX = "lrflickr."
 
 local M = {}
 
+-- LrPasswords cannot store nil ("keystring or password is nil"): an empty string means unset.
 local function get(name)
-	return LrPasswords.retrieve(PREFIX .. name)
+	local v = LrPasswords.retrieve(PREFIX .. name)
+	if v == "" then
+		return nil
+	end
+	return v
 end
 
 local function put(name, value)
-	LrPasswords.store(PREFIX .. name, value)
+	LrPasswords.store(PREFIX .. name, value or "")
 end
 
 function M.app()

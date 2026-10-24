@@ -27,7 +27,13 @@ local function toResponse(body, raw)
 	if raw.error then
 		message = string.format("%s (%s)", tostring(raw.error.name), tostring(raw.error.errorCode))
 	end
-	return { status = raw.status, body = body, headers = headerTable(raw), message = message }
+	return {
+		status = raw.status,
+		body = body,
+		headers = headerTable(raw),
+		message = message,
+		networkError = raw.error,
+	}
 end
 
 --- req: { method = "GET"|"POST", url, params }. Returns { status, body, headers, message }.

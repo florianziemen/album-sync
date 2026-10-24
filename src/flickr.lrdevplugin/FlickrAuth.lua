@@ -1,7 +1,7 @@
 --[[
 Flickr OAuth 1.0a login flow with out-of-band (oob) verifier.
 
-Dependencies as for FlickrApi (transport, now, random).
+Dependencies as for FlickrApi (transport, now, random, optional log).
 ]]
 
 local OAuth = require("OAuth")
@@ -13,20 +13,29 @@ local OAUTH_BASE = "https://www.flickr.com/services/oauth/"
 local M = {}
 M.__index = M
 
---- deps: { transport, now, random }; creds: { consumerKey, consumerSecret }
+--- deps: { transport, now, random, log? }; creds: { consumerKey, consumerSecret }
 function M.new(deps, creds)
 	return setmetatable({ deps = deps, creds = creds, api = FlickrApi.new(deps, creds) }, M)
 end
 
 --- Step 1. Returns { token, tokenSecret } or nil, err.
 function M:requestToken()
-	local resp = self.api:signedRequest("GET", OAUTH_BASE .. "request_token", { oauth_callback = "oob" })
-	local form, e = FlickrResponse.parseOAuth(resp)
+	local form, e = self.api:signedExchange(
+		"oauth/request_token",
+		"GET",
+		OAUTH_BASE .. "request_token",
+		{ oauth_callback = "oob" },
+		nil,
+		nil,
+		FlickrResponse.parseOAuth,
+		function(f)
+			if f.oauth_callback_confirmed ~= "true" then
+				return "callback not confirmed"
+			end
+		end
+	)
 	if not form then
 		return nil, e
-	end
-	if form.oauth_callback_confirmed ~= "true" then
-		return nil, { class = "auth", message = "callback not confirmed" }
 	end
 	return { token = form.oauth_token, tokenSecret = form.oauth_token_secret }
 end
@@ -42,14 +51,20 @@ end
 
 --- Step 3. Returns { token, tokenSecret, userNsid, username, fullname } or nil, err.
 function M:accessToken(requestToken, verifier)
-	local resp = self.api:signedRequest(
+	local form, e = self.api:signedExchange(
+		"oauth/access_token",
 		"GET",
 		OAUTH_BASE .. "access_token",
 		{ oauth_verifier = verifier },
 		requestToken.token,
-		requestToken.tokenSecret
+		requestToken.tokenSecret,
+		FlickrResponse.parseOAuth,
+		function(f)
+			if not (f.oauth_token_secret and f.user_nsid) then
+				return "access_token: missing oauth_token_secret or user_nsid"
+			end
+		end
 	)
-	local form, e = FlickrResponse.parseOAuth(resp)
 	if not form then
 		return nil, e
 	end
@@ -64,11 +79,16 @@ end
 
 --- Verify tokens. Returns { id, username } or nil, err.
 function M:testLogin(access)
-	local data, e = FlickrApi.new(self.deps, self.creds, access):call("flickr.test.login")
+	local data, e = FlickrApi.new(self.deps, self.creds, access):call("flickr.test.login", nil, nil, function(d)
+		if type(d.user) ~= "table" or not d.user.id then
+			return "test.login: missing user.id"
+		end
+	end)
 	if not data then
 		return nil, e
 	end
-	return { id = data.user.id, username = data.user.username._content }
+	local username = type(data.user.username) == "table" and data.user.username._content or nil
+	return { id = data.user.id, username = username }
 end
 
 return M

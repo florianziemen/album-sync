@@ -13,6 +13,8 @@ Lightroom Classic publish-service plugin for Flickr. MIT licensed. See `docs/DES
 - Target Lua 5.1 (Lightroom Classic 13+). No `bit` or `bit32`, no `goto`.
 - Core modules must not call `import`. Inject LR adapters so the core is testable with busted.
 - Flickr errors: never rely on the HTTP status alone; parse `stat`/`code`. See DESIGN §8.
+- All Flickr calls go through `FlickrApi:exchange` (one summary log line each, and a full redacted dump via `Diagnostics` on any failure or unexpected response shape). Don't call the transport directly.
+- In Lightroom, use `LrTasks.pcall` (injected as `deps.pcall`) around anything that yields; plain `pcall` cannot cross yields in Lua 5.1.
 
 ## Tooling
 

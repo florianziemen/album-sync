@@ -172,6 +172,7 @@ local function planBatch(session, renderSettings)
 		end
 	end)
 	if not ok then
+		log:error("planning failed: " .. tostring(err))
 		LrErrors.throwUserError("Flickr: planning failed: " .. tostring(err))
 	end
 	return entries
@@ -249,7 +250,31 @@ local function execute(api, entry, path)
 	return remoteId
 end
 
-function provider.processRenderedPhotos(_, exportContext)
+-- Identifies a photo in log lines (no paths).
+local function photoLabel(photo)
+	local ok, name = pcall(function()
+		return photo:getFormattedMetadata("fileName")
+	end)
+	return string.format("%s (localId=%s)", ok and tostring(name) or "?", tostring(photo.localIdentifier))
+end
+
+local function fail(rendition, entry, message)
+	log:error(
+		string.format(
+			"photo failed: %s action=%s remoteId=%s: %s",
+			photoLabel(rendition.photo),
+			tostring(entry and entry.action),
+			tostring(entry and (entry.publishedId or entry.flickrId)),
+			tostring(message)
+		)
+	)
+	rendition:uploadFailed(tostring(message))
+end
+
+function provider.processRenderedPhotos(functionContext, exportContext)
+	functionContext:addFailureHandler(function(_, message)
+		log:error("publish run aborted: " .. tostring(message))
+	end)
 	local settings = exportContext.propertyTable
 	local session = exportContext.exportSession
 	local deps = AppDeps()
@@ -304,9 +329,9 @@ function provider.processRenderedPhotos(_, exportContext)
 		end
 
 		if not ok then
-			rendition:uploadFailed(tostring(msg))
+			fail(rendition, entry, "render failed: " .. tostring(msg))
 		elseif entry.action == "leaveModified" then
-			rendition:uploadFailed("Image changed; replacing needs Flickr Pro.")
+			fail(rendition, entry, "Image changed; replacing needs Flickr Pro.")
 		elseif dryRun then
 			event("dryRun", { action = entry.action, id = entry.publishedId or entry.flickrId })
 		else
@@ -322,8 +347,7 @@ function provider.processRenderedPhotos(_, exportContext)
 					metadataFingerprint = entry.current.metadata,
 				})
 			else
-				log:error("publish failed: " .. tostring(err))
-				rendition:uploadFailed(err)
+				fail(rendition, entry, err)
 			end
 		end
 

@@ -207,6 +207,8 @@ Every response carries the `x-flickr-api-request` header, which should be logged
 | Account | 6, 7 | Stop the batch and report. |
 | Replace without Pro | 1 on replace | Ask once per batch (§3). |
 
+**Diagnostics.** Every exchange is logged as one summary line (method, status, time, bytes, Flickr request ID). On any failure, including an unexpected response shape (class `unexpected`), the full exchange is dumped: request parameters, file name and size, status, all headers, network error fields, and the body (max 64 KB). Signature, tokens, token secrets and verifier are redacted, and the consumer key is shortened. Aborted publish runs and failed photos are logged with the planned action and the remote ID.
+
 Throttle all API calls to at most 1 per second, which stays below 3600 per hour per key.
 
 ## 9. Spikes (in order)

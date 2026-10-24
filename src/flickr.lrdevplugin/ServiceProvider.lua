@@ -132,17 +132,30 @@ function provider.renamePublishedCollection(publishSettings, info)
 	end
 end
 
--- Deleting a collection never deletes the album or its photos on Flickr.
+-- Deleting a collection (or set) never deletes albums or photos on Flickr. Our own question
+-- replaces Lightroom's default one ("delete the photos from the service?"), which would be
+-- misleading here. Returning "delete" proceeds without Lightroom's prompt.
+function provider.shouldDeletePublishedCollection(_, info)
+	if not info.hasItemsOnService then
+		return nil
+	end
+	local names = {}
+	for _, c in ipairs(info.collections or {}) do
+		names[#names + 1] = "“" .. tostring(c:getName()) .. "”"
+	end
+	local answer = LrDialogs.confirm(
+		string.format("Remove %s from Lightroom only?", table.concat(names, ", ")),
+		"The Flickr album(s) and all their photos stay online. Delete them on the Flickr website "
+			.. "if you no longer want them.",
+		"Remove from Lightroom only",
+		"Cancel"
+	)
+	event("shouldDeleteCollection", { names = table.concat(names, ","), answer = answer })
+	return answer == "ok" and "delete" or "cancel"
+end
+
 function provider.deletePublishedCollection(_, info)
 	event("deleteCollectionKeepAlbum", { album = info.remoteId, name = info.name })
-	if info.remoteId then
-		LrDialogs.message(
-			string.format("The Flickr album “%s” stays online.", tostring(info.name)),
-			"Only the link in Lightroom was removed. The album and its photos remain on Flickr; "
-				.. "delete them on the Flickr website if you no longer want them.",
-			"info"
-		)
-	end
 end
 
 function provider.imposeSortOrderOnPublishedCollection(publishSettings, info, remoteIdSequence)

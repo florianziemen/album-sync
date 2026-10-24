@@ -15,14 +15,30 @@ describe("PhotoFields", function()
 		assert.equal("", PhotoFields.tags(""))
 	end)
 
-	it("maps caption to description and keywords to tags", function()
-		assert.same(
-			{ title = "T", description = "C", tags = "Deckel" },
-			PhotoFields.metadataFields({ title = "T", fileName = "x.jpg", caption = "C", keywords = "Deckel" })
-		)
+	it("maps caption, keywords, privacy and location", function()
+		local meta = {
+			title = "T",
+			fileName = "x.jpg",
+			caption = "C",
+			keywords = "Deckel",
+			gps = { latitude = 53.55, longitude = 9.99 },
+		}
+		assert.same({
+			title = "T",
+			description = "C",
+			tags = "Deckel",
+			privacy = "friends",
+			location = "53.5500,9.9900",
+			latitude = 53.55,
+			longitude = 9.99,
+		}, PhotoFields.metadataFields(meta, { privacy = "friends", location = true }))
+		local noLoc = PhotoFields.metadataFields(meta, { location = false })
+		assert.equal("", noLoc.location)
+		assert.is_nil(noLoc.latitude)
+		assert.equal("private", noLoc.privacy)
 	end)
 
-	it("uploads private and hidden by default", function()
+	it("uploads with privacy flags and hidden from search by default", function()
 		local f = PhotoFields.uploadFields(PhotoFields.metadataFields({ fileName = "x.jpg", keywords = "k" }))
 		assert.same({
 			title = "x",
@@ -33,12 +49,11 @@ describe("PhotoFields", function()
 			is_family = "0",
 			hidden = "2",
 		}, f)
-	end)
-
-	it("applies privacy settings", function()
-		local f = PhotoFields.uploadFields({ title = "x" }, { isPublic = true, hidden = false })
+		f = PhotoFields.uploadFields({ title = "x", privacy = "public" }, { hidden = false })
 		assert.equal("1", f.is_public)
 		assert.equal("1", f.hidden)
+		f = PhotoFields.uploadFields({ title = "x", privacy = "friendsFamily" })
+		assert.same({ "0", "1", "1" }, { f.is_public, f.is_friend, f.is_family })
 	end)
 
 	it("builds photo URLs", function()

@@ -2,6 +2,8 @@
 Maps Lightroom photo metadata to Flickr upload/setMeta/setTags fields (docs/DESIGN.md §3).
 ]]
 
+local Privacy = require("Privacy")
+
 local M = {}
 
 local function blank(s)
@@ -37,26 +39,41 @@ function M.tags(keywordList)
 	return table.concat(out, " ")
 end
 
---- Fields pushed to Flickr for a photo; also the input of the metadata fingerprint.
---- meta: { title, fileName, caption, keywords }
-function M.metadataFields(meta)
-	return { title = M.title(meta), description = meta.caption or "", tags = M.tags(meta.keywords) }
+--[[
+Fields pushed to Flickr for a photo; also the input of the metadata fingerprint.
+meta: { title, fileName, caption, keywords, gps = { latitude, longitude }? }
+opts: { privacy = resolved Privacy value, location = boolean (send GPS) }
+location is "" when disabled or unknown; latitude/longitude are kept for sending.
+]]
+function M.metadataFields(meta, opts)
+	opts = opts or {}
+	local gps = opts.location and meta.gps or nil
+	return {
+		title = M.title(meta),
+		description = meta.caption or "",
+		tags = M.tags(meta.keywords),
+		privacy = opts.privacy or "private",
+		location = gps and Privacy.locationKey(gps.latitude, gps.longitude) or "",
+		latitude = gps and gps.latitude or nil,
+		longitude = gps and gps.longitude or nil,
+	}
 end
 
 --[[
-fields: from metadataFields
-privacy: { isPublic, isFriend, isFamily, hidden }; defaults to fully private and hidden from search.
+Upload arguments. fields: from metadataFields. opts.hidden: hide from public searches
+(default true). Location is set separately (geo.setLocation) after the upload.
 ]]
-function M.uploadFields(fields, privacy)
-	privacy = privacy or {}
+function M.uploadFields(fields, opts)
+	opts = opts or {}
+	local flags = Privacy.flags(fields.privacy)
 	return {
 		title = fields.title,
 		description = fields.description,
 		tags = fields.tags,
-		is_public = privacy.isPublic and "1" or "0",
-		is_friend = privacy.isFriend and "1" or "0",
-		is_family = privacy.isFamily and "1" or "0",
-		hidden = (privacy.hidden == false) and "1" or "2",
+		is_public = flags.is_public,
+		is_friend = flags.is_friend,
+		is_family = flags.is_family,
+		hidden = (opts.hidden == false) and "1" or "2",
 	}
 end
 

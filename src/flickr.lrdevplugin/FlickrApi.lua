@@ -20,6 +20,7 @@ redacted dump of request and response (Diagnostics).
 
 local OAuth = require("OAuth")
 local Diagnostics = require("Diagnostics")
+local Privacy = require("Privacy")
 local Retry = require("Retry")
 local FlickrResponse = require("FlickrResponse")
 
@@ -245,18 +246,84 @@ function M:replace(filePath, photoId)
 	return id, e
 end
 
---- Push title, description and tags (fields from PhotoFields.metadataFields).
---- setTags replaces all tags on the photo. Returns true or nil, err.
+--[[
+Push the selected metadata fields (fields from PhotoFields.metadataFields; which = set of
+"title", "description", "tags", "privacy", "location"; nil = all). setTags replaces all
+tags on the photo. Returns true or nil, err.
+]]
+function M:pushMetadata(photoId, fields, which)
+	local function want(name)
+		return which == nil or which[name]
+	end
+	local _, e
+	if want("title") or want("description") then
+		_, e = self:call(
+			"flickr.photos.setMeta",
+			{ photo_id = photoId, title = fields.title, description = fields.description },
+			"POST"
+		)
+		if e then
+			return nil, e
+		end
+	end
+	if want("tags") then
+		_, e = self:call("flickr.photos.setTags", { photo_id = photoId, tags = fields.tags or "" }, "POST")
+		if e then
+			return nil, e
+		end
+	end
+	if want("privacy") and fields.privacy then
+		_, e = self:setPrivacy(photoId, fields.privacy)
+		if e then
+			return nil, e
+		end
+	end
+	if want("location") and fields.location ~= nil then
+		_, e = self:setLocation(photoId, fields.latitude, fields.longitude)
+		if e then
+			return nil, e
+		end
+	end
+	return true
+end
+
+--- Title, description and tags (for callers that push everything).
 function M:setMetadata(photoId, fields)
-	local _, e = self:call(
-		"flickr.photos.setMeta",
-		{ photo_id = photoId, title = fields.title, description = fields.description },
-		"POST"
-	)
+	return self:pushMetadata(photoId, fields, { title = true, description = true, tags = true })
+end
+
+--- Visibility (Privacy value). Returns true or nil, err.
+function M:setPrivacy(photoId, privacy)
+	local flags = Privacy.flags(privacy)
+	local _, e = self:call("flickr.photos.setPerms", {
+		photo_id = photoId,
+		is_public = flags.is_public,
+		is_friend = flags.is_friend,
+		is_family = flags.is_family,
+	}, "POST")
 	if e then
 		return nil, e
 	end
-	_, e = self:call("flickr.photos.setTags", { photo_id = photoId, tags = fields.tags or "" }, "POST")
+	return true
+end
+
+--- Set (lat/lon numbers) or remove (nil) the location. Returns true or nil, err.
+function M:setLocation(photoId, lat, lon)
+	local _, e
+	if lat and lon then
+		_, e = self:call("flickr.photos.geo.setLocation", {
+			photo_id = photoId,
+			lat = string.format("%.6f", lat),
+			lon = string.format("%.6f", lon),
+			accuracy = "16",
+		}, "POST")
+	else
+		-- code 2: photo has no location -> nothing to remove
+		_, e = self:call("flickr.photos.geo.removeLocation", { photo_id = photoId }, "POST", nil, { [2] = true })
+		if e and e.code == 2 then
+			e = nil
+		end
+	end
 	if e then
 		return nil, e
 	end

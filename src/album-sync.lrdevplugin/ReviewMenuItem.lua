@@ -316,14 +316,26 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 		local l = recorded[tostring(item.id)]
 		if l and not linkedFlickr[tostring(item.id)] then
 			if linked[l.key] then
+				-- Published twice from the same photo (e.g. into two collections): a duplicate
+				-- upload when the files match in size, else a different version (stays queued).
+				local keep = tostring(linked[l.key])
+				local a, b = api:originalSize(keep), api:originalSize(item.id)
+				local same = a and b and DuplicateCheck.sameImage(a, b)
 				log:info(
 					string.format(
-						"review: flickr=%s was published from %s, which is linked to flickr=%s already",
+						"review: flickr=%s was published from %s, which is linked to flickr=%s already (%s vs %s bytes%s)",
 						item.id,
 						l.key,
-						tostring(linked[l.key])
+						keep,
+						tostring(a),
+						tostring(b),
+						same and ": duplicate upload" or ""
 					)
 				)
+				if same then
+					queue:remove(item.id)
+					duplicates[#duplicates + 1] = { keep = keep, duplicate = tostring(item.id), bytes = b }
+				end
 			else
 				photoByKey[l.key] = photoByKey[l.key] or l.photo
 				if link(item, l.key, "recorded by publish service") then
@@ -332,12 +344,10 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 			end
 		end
 	end
-	if byService > 0 then
-		auto = auto + byService
-		items = {}
-		for i, item in ipairs(queue:items()) do
-			items[i] = item
-		end
+	auto = auto + byService
+	items = {}
+	for i, item in ipairs(queue:items()) do
+		items[i] = item
 	end
 
 	-- Pre-pass: several Flickr copies of one catalog photo with identical file sizes are the same

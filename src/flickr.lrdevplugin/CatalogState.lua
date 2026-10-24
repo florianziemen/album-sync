@@ -336,12 +336,34 @@ end
 
 --[[
 Link already-published photos into `collection` without uploading.
-links: array of { photo, id, url, fingerprints = { image, metadata } }.
+links: array of { photo, id, url, fingerprints = { image, metadata }, metadataState? }.
 remote: optional { id, url } recorded on the collection (album).
-Written in chunks of 500 photos per write gate.
+Lightroom allows a remote id only once per collection: a link whose Flickr id already belongs
+to another photo of the collection is skipped (returned in `skipped` with that photo), one
+already present for the same photo only refreshes the plugin fields.
+Written in chunks of 500 photos per write gate. Returns linked count, skipped array.
 ]]
 function M.linkPublished(collection, links, remote)
 	local catalog = LrApplication.activeCatalog()
+	local existing = {}
+	for _, pp in ipairs(collection:getPublishedPhotos()) do
+		local rid = pp:getRemoteId()
+		if rid then
+			existing[tostring(rid)] = pp:getPhoto()
+		end
+	end
+	local todo, skipped = {}, {}
+	for _, l in ipairs(links) do
+		local holder = existing[tostring(l.id)]
+		if holder and holder.localIdentifier ~= l.photo.localIdentifier then
+			skipped[#skipped + 1] = { link = l, holder = holder }
+		else
+			l.alreadyInCollection = holder ~= nil
+			todo[#todo + 1] = l
+			existing[tostring(l.id)] = l.photo
+		end
+	end
+
 	local CHUNK = 500
 	local first = true
 	local i = 1
@@ -351,9 +373,11 @@ function M.linkPublished(collection, links, remote)
 				collection:setRemoteId(remote.id)
 				collection:setRemoteUrl(remote.url)
 			end
-			for j = i, math.min(i + CHUNK - 1, #links) do
-				local l = links[j]
-				collection:addPhotoByRemoteId(l.photo, l.id, l.url, true)
+			for j = i, math.min(i + CHUNK - 1, #todo) do
+				local l = todo[j]
+				if not l.alreadyInCollection then
+					collection:addPhotoByRemoteId(l.photo, l.id, l.url, true)
+				end
 				l.photo:setPropertyForPlugin(_PLUGIN, "flickrId", l.id)
 				l.photo:setPropertyForPlugin(_PLUGIN, "flickrState", "published")
 				l.photo:setPropertyForPlugin(_PLUGIN, "imageFingerprint", l.fingerprints.image)
@@ -365,7 +389,8 @@ function M.linkPublished(collection, links, remote)
 		end, { timeout = 120 })
 		first = false
 		i = i + CHUNK
-	until i > #links
+	until i > #todo
+	return #todo, skipped
 end
 
 return M

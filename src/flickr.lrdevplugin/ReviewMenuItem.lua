@@ -149,7 +149,22 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	local linkedCount, dismissed, auto = 0, 0, 0
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
-		local where = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
+		local where, conflicts = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
+		for _, c in ipairs(conflicts) do
+			local holderName = c.holder:getFormattedMetadata("fileName")
+			local msg = string.format(
+				"Flickr photo %s is already linked to %s (%s) in “%s”; not linked again.",
+				item.id,
+				tostring(holderName),
+				tostring(c.holder:getRawMetadata("uuid")),
+				c.collection:getName()
+			)
+			log:error("review: " .. msg)
+			LrDialogs.message("Flickr: already linked", msg, "warning")
+		end
+		if where == "" then
+			return
+		end
 		linked[key] = item.id -- never offer this photo again in this session
 		queue:remove(item.id)
 		linkedCount = linkedCount + 1

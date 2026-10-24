@@ -309,14 +309,24 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 			)
 		else
 			local links = linksFor(t.plan.matches)
-			CatalogState.linkPublished(
+			local n, conflicts = CatalogState.linkPublished(
 				t.collection,
 				links,
 				{ id = t.plan.album.id, url = AlbumSync.url(nsid, t.plan.album.id) }
 			)
 			linkedAlbums = linkedAlbums + 1
-			linkedPhotos = linkedPhotos + #links
-			log:info(string.format("import: album %s (%s): linked %d", t.plan.album.title, t.plan.album.id, #links))
+			linkedPhotos = linkedPhotos + n
+			log:info(string.format("import: album %s (%s): linked %d", t.plan.album.title, t.plan.album.id, n))
+			for _, sk in ipairs(conflicts) do
+				log:error(
+					string.format(
+						"import: flickr=%s already belongs to %s in album %s; skipped",
+						sk.link.id,
+						tostring(sk.holder:getRawMetadata("uuid")),
+						t.plan.album.title
+					)
+				)
+			end
 		end
 	end
 
@@ -325,9 +335,9 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 		if photostreamCollection then
 			apply:setCaption("Linking photostream photos…")
 			local links = linksFor(plan.photostream.matches)
-			CatalogState.linkPublished(photostreamCollection, links)
-			linkedPhotos = linkedPhotos + #links
-			log:info(string.format("import: photostream: linked %d", #links))
+			local n, conflicts = CatalogState.linkPublished(photostreamCollection, links)
+			linkedPhotos = linkedPhotos + n
+			log:info(string.format("import: photostream: linked %d, skipped %d", n, #conflicts))
 		else
 			log:error("import: no default (Photostream) collection found")
 		end

@@ -50,28 +50,35 @@ end
 
 --[[
 Link one photo found in review: into the existing collections of `albumIds`, or into
-Photostream when the photo is in no album. Returns a short description of where.
+Photostream when the photo is in no album. Returns a short description of where, and an array
+of conflicts ({ collection, holder }) where the Flickr id already belongs to another photo.
 ]]
 function M.linkOne(service, nsid, photo, flickrId, albumIds)
 	local links =
 		M.links(nsid, { { id = flickrId, photo = photo } }, M.renderSettings(service), service:getPublishSettings())
 	local byRemote = CatalogState.collectionsByRemoteId()
-	local where = {}
+	local where, conflicts = {}, {}
+	local function into(c, remote)
+		local _, skipped = CatalogState.linkPublished(c, links, remote)
+		if #skipped > 0 then
+			conflicts[#conflicts + 1] = { collection = c, holder = skipped[1].holder }
+		else
+			where[#where + 1] = c:getName()
+		end
+	end
 	for _, albumId in ipairs(albumIds or {}) do
 		local c = byRemote[albumId]
 		if c then
-			CatalogState.linkPublished(c, links, { id = albumId, url = AlbumSync.url(nsid, albumId) })
-			where[#where + 1] = c:getName()
+			into(c, { id = albumId, url = AlbumSync.url(nsid, albumId) })
 		end
 	end
-	if #where == 0 then
+	if #where == 0 and #conflicts == 0 then
 		local c = CatalogState.defaultCollection(service)
 		if c then
-			CatalogState.linkPublished(c, links)
-			where[#where + 1] = c:getName()
+			into(c)
 		end
 	end
-	return table.concat(where, ", ")
+	return table.concat(where, ", "), conflicts
 end
 
 return M

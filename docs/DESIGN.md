@@ -190,6 +190,11 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - Uploads store `{ lr, sent = lr }`.
 - Metadata schema v2: adds `flickrPrivacy` and `metadataState`, so LR must be restarted.
 
+## 6d. Link consistency
+
+- "Already linked" means: the Flickr ID appears in any plugin field or any published collection of the catalog (`CatalogState.linkedFlickrIds`). Import leaves such pairs out of matching. Review drops queue items for them. Linking never adds an ID twice to one collection (LR enforces `UNIQUE(collection, remoteId)`; such links are skipped and reported).
+- `CatalogState.repairFlickrIds` runs at the start of import and review. When all of a photo's collection links agree on one ID and its `flickrId` field differs, the field is corrected and the change is logged. Causes seen: an interrupted link, and fields copied by "Import from Another Catalog" without "Forget link".
+
 ## 6c. Virtual copies
 
 - Lightroom copies plugin fields to a new virtual copy, so the copy starts with its master's `flickrId` and fingerprints. Observed 2026-10-24: a cropped copy was planned as "replace" of the master's Flickr photo (blocked only by the non-Pro dialog).

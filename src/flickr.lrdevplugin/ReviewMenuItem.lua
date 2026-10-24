@@ -138,6 +138,16 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 		return
 	end
 
+	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
+		log:info(
+			string.format(
+				"review: repaired Flickr ID of %s: %s -> %s",
+				tostring(ch.photo:getRawMetadata("uuid")),
+				tostring(ch.from),
+				ch.to
+			)
+		)
+	end
 	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
 	local recordByKey = {}
 	for _, r in ipairs(records) do

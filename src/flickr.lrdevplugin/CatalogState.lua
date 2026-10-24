@@ -337,6 +337,49 @@ function M.linkedFlickrIds(linked)
 	return ids
 end
 
+--[[
+Repair the plugin field flickrId from the published collections: when all of a photo's
+collection links agree on one Flickr id and the field differs (stale after a crash, or copied
+by "Import from Another Catalog"), the field is set to that id. Photos linked to several
+different ids are left alone (re-uploads keep old ids in other collections).
+Returns array of { photo, from, to } changes.
+]]
+function M.repairFlickrIds()
+	local idsByPhoto, photoByLocal = {}, {}
+	for _, c in ipairs(M.pluginCollections()) do
+		for _, pp in ipairs(c:getPublishedPhotos()) do
+			local rid = pp:getRemoteId()
+			if rid then
+				local photo = pp:getPhoto()
+				local key = photo.localIdentifier
+				photoByLocal[key] = photo
+				idsByPhoto[key] = idsByPhoto[key] or {}
+				idsByPhoto[key][tostring(rid)] = true
+			end
+		end
+	end
+	local changes = {}
+	for key, ids in pairs(idsByPhoto) do
+		local only, count = nil, 0
+		for id in pairs(ids) do
+			only, count = id, count + 1
+		end
+		local photo = photoByLocal[key]
+		local field = photo:getPropertyForPlugin(_PLUGIN, "flickrId", nil, true)
+		if count == 1 and tostring(field) ~= only then
+			changes[#changes + 1] = { photo = photo, from = field, to = only }
+		end
+	end
+	if #changes > 0 then
+		LrApplication.activeCatalog():withPrivateWriteAccessDo(function()
+			for _, ch in ipairs(changes) do
+				ch.photo:setPropertyForPlugin(_PLUGIN, "flickrId", ch.to)
+			end
+		end, { timeout = 60 })
+	end
+	return changes
+end
+
 --- The publish service of this plugin (first one), or nil.
 function M.publishService()
 	return LrApplication.activeCatalog():getPublishServices(_PLUGIN.id)[1]

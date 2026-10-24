@@ -148,6 +148,16 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 
 	local progress = LrProgressScope({ title = "Flickr: reading catalog and albums", functionContext = context })
 	progress:setCaption("Reading catalog…")
+	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
+		log:info(
+			string.format(
+				"import: repaired Flickr ID of %s: %s -> %s",
+				tostring(ch.photo:getRawMetadata("uuid")),
+				tostring(ch.from),
+				ch.to
+			)
+		)
+	end
 	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
 	local range = ImportPlan.range(records)
 	if not range then

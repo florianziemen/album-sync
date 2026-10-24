@@ -393,6 +393,9 @@ local function renderQueue(entries, renderSettings, ahead)
 	return RenderQueue.new(toRender, ahead or RENDER_AHEAD, start, await), folder
 end
 
+local GONE_MESSAGE = "This photo no longer exists on Flickr. Use File > Plug-in Extras > "
+	.. "“Flickr: Check for photos deleted on Flickr…” to mark or unlink such photos."
+
 -- Faults for testing recovery (Development section). Each fires once per run.
 local function faultInjector(mode)
 	if not mode or mode == "none" then
@@ -475,6 +478,10 @@ local function execute(ctx, entry, path)
 	if needsMeta then
 		local _, metaErr = api:setMetadata(remoteId, entry.fields)
 		if metaErr then
+			if metaErr.code == 1 then -- setMeta/setTags: Photo not found
+				entry.goneOnFlickr = true
+				return nil, GONE_MESSAGE
+			end
 			return nil, FlickrResponse.describe(metaErr)
 		end
 	end
@@ -489,6 +496,10 @@ local function ensureInAlbum(api, user, session, album, entry, remoteId)
 	end
 	local ok, e = AlbumSync.add(api, album, remoteId)
 	if not ok then
+		if e.code == 2 then -- addPhoto: Photo not found
+			entry.goneOnFlickr = true
+			return nil, GONE_MESSAGE
+		end
 		return nil, "could not add to album: " .. FlickrResponse.describe(e)
 	end
 	if album.created then
@@ -518,6 +529,9 @@ local function fail(rendition, entry, message)
 			tostring(message)
 		)
 	)
+	if entry and entry.goneOnFlickr then
+		CatalogState.save(rendition.photo, { flickrState = "deletedOnFlickr" })
+	end
 	rendition:uploadFailed(tostring(message))
 end
 

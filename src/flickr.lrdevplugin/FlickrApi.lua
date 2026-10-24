@@ -256,6 +256,58 @@ function M:setMetadata(photoId, fields)
 	return true
 end
 
+--- true if the photo exists for the caller, false if Flickr says "Photo not found", or nil, err.
+function M:photoExists(photoId)
+	local data, e = self:call("flickr.photos.getInfo", { photo_id = photoId })
+	if data then
+		return true
+	end
+	if e and e.code == 1 then
+		return false
+	end
+	return nil, e
+end
+
+--[[
+All own photo ids (paged, 500 per call). Returns set { [id] = true }, count, total or nil, err.
+count < total means the listing was incomplete; callers must not treat absence as deletion
+without confirming (photoExists).
+]]
+function M:listOwnPhotoIds()
+	local ids, count, page, total = {}, 0, 1, 0
+	local pages
+	repeat
+		local data, e = self:call(
+			"flickr.people.getPhotos",
+			{
+				user_id = "me",
+				per_page = "500",
+				page = tostring(page),
+			},
+			nil,
+			function(d)
+				if type(d.photos) ~= "table" then
+					return "people.getPhotos: missing photos"
+				end
+			end
+		)
+		if not data then
+			return nil, e
+		end
+		pages = tonumber(data.photos.pages) or 1
+		total = tonumber(data.photos.total) or total
+		for _, p in ipairs(data.photos.photo or {}) do
+			local id = tostring(p.id)
+			if not ids[id] then
+				ids[id] = true
+				count = count + 1
+			end
+		end
+		page = page + 1
+	until page > pages
+	return ids, count, total
+end
+
 --- Delete a photo on Flickr (needs perms=delete). Only on explicit user choice.
 function M:deletePhoto(photoId)
 	local _, e = self:call("flickr.photos.delete", { photo_id = photoId }, "POST")

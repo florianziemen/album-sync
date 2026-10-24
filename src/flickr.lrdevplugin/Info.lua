@@ -13,6 +13,7 @@ return {
 
 	LrExportMenuItems = {
 		{ title = "Flickr: Log in", file = "LoginMenuItem.lua" },
+		{ title = "Flickr: Check for photos deleted on Flickr…", file = "CheckDeletedMenuItem.lua" },
 	},
 
 	VERSION = { major = 0, minor = 1, revision = 0 },

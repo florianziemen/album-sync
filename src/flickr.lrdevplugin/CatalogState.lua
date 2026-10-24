@@ -131,4 +131,87 @@ function M.retarget(photo, oldId, newId, url, except)
 	return #targets
 end
 
+--- All published collections (not sets) of this plugin's publish services.
+function M.pluginCollections()
+	local out = {}
+	local function walk(container)
+		for _, c in ipairs(container:getChildCollections()) do
+			out[#out + 1] = c
+		end
+		for _, set in ipairs(container:getChildCollectionSets()) do
+			walk(set)
+		end
+	end
+	for _, service in ipairs(LrApplication.activeCatalog():getPublishServices(_PLUGIN.id)) do
+		walk(service)
+	end
+	return out
+end
+
+--- lockedNsid of each publish service of this plugin.
+function M.lockedAccounts()
+	local out = {}
+	for _, service in ipairs(LrApplication.activeCatalog():getPublishServices(_PLUGIN.id)) do
+		local settings = service:getPublishSettings() or {}
+		if settings.lockedNsid and settings.lockedNsid ~= "" then
+			out[#out + 1] = settings.lockedNsid
+		end
+	end
+	return out
+end
+
+--[[
+Every Flickr id the catalog knows, as links { photo, id, collection } (collection nil for the
+plugin field flickrId). One photo can have several links (several collections, stale ids).
+]]
+function M.knownLinks()
+	local links = {}
+	for _, c in ipairs(M.pluginCollections()) do
+		for _, pp in ipairs(c:getPublishedPhotos()) do
+			local rid = pp:getRemoteId()
+			if rid then
+				links[#links + 1] = { photo = pp:getPhoto(), id = tostring(rid), collection = c }
+			end
+		end
+	end
+	local catalog = LrApplication.activeCatalog()
+	for _, photo in ipairs(catalog:findPhotosWithProperty(_PLUGIN.id, "flickrId")) do
+		local id = photo:getPropertyForPlugin(_PLUGIN, "flickrId", nil, true)
+		if id then
+			links[#links + 1] = { photo = photo, id = tostring(id) }
+		end
+	end
+	return links
+end
+
+--[[
+Mark photos whose Flickr copy is gone (see RemoteCheck.classify).
+photos: LrPhoto array -> flickrState = "deletedOnFlickr".
+unlink = true: also clear their flickrId/fingerprints, and remove `staleLinks`
+({ photo, collection }) from their collections, so they can be published again as new photos.
+]]
+function M.markDeleted(photos, staleLinks, unlink)
+	local byCollection = {}
+	if unlink then
+		for _, link in ipairs(staleLinks) do
+			local key = link.collection.localIdentifier
+			byCollection[key] = byCollection[key] or { collection = link.collection, photos = {} }
+			table.insert(byCollection[key].photos, link.photo)
+		end
+	end
+	LrApplication.activeCatalog():withWriteAccessDo("Flickr: mark photos deleted on Flickr", function()
+		for _, photo in ipairs(photos) do
+			photo:setPropertyForPlugin(_PLUGIN, "flickrState", "deletedOnFlickr")
+			if unlink then
+				photo:setPropertyForPlugin(_PLUGIN, "flickrId", nil)
+				photo:setPropertyForPlugin(_PLUGIN, "imageFingerprint", nil)
+				photo:setPropertyForPlugin(_PLUGIN, "metadataFingerprint", nil)
+			end
+		end
+		for _, item in pairs(byCollection) do
+			item.collection:removePhotos(item.photos)
+		end
+	end, { timeout = 60 })
+end
+
 return M

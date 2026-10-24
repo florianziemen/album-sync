@@ -12,6 +12,7 @@ local M = {}
 local SET_NOT_FOUND = 1
 local ALREADY_IN_SET = 3
 local NOT_IN_SET = 3
+local PHOTO_NOT_FOUND = 2 -- removePhoto: photo deleted on Flickr
 
 function M.url(nsid, albumId)
 	return string.format("https://www.flickr.com/photos/%s/albums/%s", nsid, albumId)
@@ -62,10 +63,10 @@ function M.add(api, album, photoId)
 	return true
 end
 
---- Remove a photo from an album. Missing album or photo-not-in-album count as success.
+--- Remove a photo from an album. Missing album, missing photo or photo-not-in-album count as success.
 function M.remove(api, albumId, photoId)
 	local _, e = api:call("flickr.photosets.removePhoto", { photoset_id = albumId, photo_id = photoId }, "POST")
-	if not e or e.code == SET_NOT_FOUND or e.code == NOT_IN_SET then
+	if not e or e.code == SET_NOT_FOUND or e.code == NOT_IN_SET or e.code == PHOTO_NOT_FOUND then
 		return true
 	end
 	return nil, e

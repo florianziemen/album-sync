@@ -11,6 +11,8 @@ local LrFileUtils = import("LrFileUtils")
 local LrPathUtils = import("LrPathUtils")
 local LrTasks = import("LrTasks")
 
+local JpegXmp = require("JpegXmp")
+
 local M = {}
 
 -- Keys that would turn the nested export into a publish/plugin export.
@@ -59,6 +61,30 @@ function M.copySettings(propertyTable)
 		end
 	end
 	return nil, "none", 0
+end
+
+--[[
+Write the identification marker (JpegXmp: Lightroom uuid and copy name) into a rendered file.
+Returns true or nil, err; the upload goes ahead either way.
+]]
+function M.mark(path, props)
+	local f = io.open(path, "rb")
+	if not f then
+		return nil, "cannot read " .. tostring(path)
+	end
+	local data = f:read("*a")
+	f:close()
+	local out, err = JpegXmp.apply(data, props)
+	if not out then
+		return nil, err
+	end
+	f = io.open(path, "wb")
+	if not f then
+		return nil, "cannot write " .. tostring(path)
+	end
+	f:write(out)
+	f:close()
+	return true
 end
 
 --- Fresh temp folder for one publish run.

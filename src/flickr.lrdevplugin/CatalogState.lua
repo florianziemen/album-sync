@@ -68,6 +68,7 @@ function M.photoMeta(photo)
 		-- Respects "Include on Export", parents and synonyms.
 		keywords = photo:getFormattedMetadata("keywordTagsForExport"),
 		gps = photo:getRawMetadata("gps"),
+		copyName = photo:getFormattedMetadata("copyName"),
 	}
 end
 
@@ -250,8 +251,10 @@ function M.matcherRecords()
 		photos,
 		{ "uuid", "dateTimeOriginal", "dateTimeOriginalISO8601", "croppedDimensions", "isVideo" }
 	)
-	local fmt =
-		catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName", "cameraSerialNumber", "title" })
+	local fmt = catalog:batchGetFormattedMetadata(
+		photos,
+		{ "fileName", "preservedFileName", "cameraSerialNumber", "title", "copyName" }
+	)
 	local plugin = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
 	local records, byKey, linked = {}, {}, {}
 	for _, photo in ipairs(photos) do
@@ -283,6 +286,7 @@ function M.matcherRecords()
 				iso = iso,
 				names = names,
 				title = (f.title and f.title ~= "") and f.title or nil,
+				copyName = f.copyName or "",
 				aspect = (dims and dims.width and dims.height and dims.height > 0) and dims.width / dims.height or nil,
 				w = dims and dims.width,
 				h = dims and dims.height,

@@ -36,6 +36,7 @@ local PhotoRenderer = require("PhotoRenderer")
 local Privacy = require("Privacy")
 local RemoteState = require("RemoteState")
 local json = require("json")
+local JpegXmp = require("JpegXmp")
 local PublishPlanner = require("PublishPlanner")
 local RateLimiter = require("RateLimiter")
 local RenderQueue = require("RenderQueue")
@@ -375,6 +376,7 @@ local function planBatch(session, renderSettings, settings, collectionSettings)
 				fields.flickrId = backfilled
 				event("backfill", { photo = entry.photo.localIdentifier, id = backfilled })
 			end
+			entry.copyName = CatalogState.photoMeta(entry.photo).copyName
 			entry.locationOn = Privacy.locationEnabled(collectionSettings.location, settings.sendLocation == true)
 			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo), {
 				privacy = Privacy.resolve(fields.flickrPrivacy, collectionSettings.privacy, settings.privacy),
@@ -536,6 +538,10 @@ local function execute(ctx, entry, path)
 	local e
 
 	if action == "upload" or action == "reuploadKeep" or action == "reuploadDelete" then
+		local marked, markErr = PhotoRenderer.mark(path, { uuid = entry.uuid, copy = entry.copyName or "" })
+		if not marked then
+			log:error("marker not written for " .. tostring(entry.uuid) .. ": " .. tostring(markErr))
+		end
 		local oldId = remoteId
 		remoteId, e = ctx.uploader:upload(
 			entry.uuid,
@@ -543,6 +549,13 @@ local function execute(ctx, entry, path)
 			PhotoFields.uploadFields(entry.fields, { hidden = ctx.hideFromSearch }),
 			{ fault = ctx.faults and ctx.faults.upload }
 		)
+		if remoteId and not ctx.markerChecked then
+			-- Once per run: does Flickr return our XMP marker? (Needed for exact matching.)
+			ctx.markerChecked = true
+			local exif = api:exif(remoteId)
+			local found = JpegXmp.fromExif(exif)
+			event("markerCheck", { id = remoteId, uuid = found.uuid, copy = found.copy, ok = found.uuid == entry.uuid })
+		end
 		if remoteId and entry.fields.latitude then
 			local _, geoErr = api:setLocation(remoteId, entry.fields.latitude, entry.fields.longitude)
 			event("location", { id = remoteId, err = geoErr and geoErr.message })

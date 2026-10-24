@@ -140,3 +140,25 @@ describe("Matcher.resolveByExif", function()
 		assert.is_nil(Matcher.subsecFraction(nil))
 	end)
 end)
+
+describe("Matcher marker", function()
+	local cands = {
+		{ key = "M", names = { "IMG_1.CR3" }, copyName = "" },
+		{ key = "V1", names = { "IMG_1.CR3" }, copyName = "Copy 1" },
+		{ key = "V2", names = { "IMG_1.CR3" }, copyName = "B&W" },
+	}
+
+	it("prefers the uuid marker", function()
+		local key, how = Matcher.resolveByExif({ ["XMP-lrflickr:Uuid"] = "V2" }, cands)
+		assert.equal("V2", key)
+		assert.equal("marker:uuid", how)
+	end)
+
+	it("falls back to the copy name (other catalog)", function()
+		local key, how =
+			Matcher.resolveByExif({ ["XMP-lrflickr:Uuid"] = "elsewhere", ["XMP-lrflickr:Copy"] = "B&W" }, cands)
+		assert.equal("V2", key)
+		assert.equal("marker:copy", how)
+		assert.equal("M", (Matcher.resolveByExif({ ["XMP-lrflickr:Copy"] = "" }, cands)))
+	end)
+end)

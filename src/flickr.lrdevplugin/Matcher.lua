@@ -22,6 +22,8 @@ Rules: candidates = catalog photos taken in the same second.
 A catalog photo matched by several Flickr photos (duplicates on Flickr) -> all to review.
 ]]
 
+local JpegXmp = require("JpegXmp")
+
 local M = {}
 
 M.ASPECT_TOLERANCE = 0.01
@@ -197,6 +199,27 @@ Returns key, how or nil.
 Order: camera serial narrows the set; then preserved/original file name; then sub-second.
 ]]
 function M.resolveByExif(exif, candidates)
+	-- Our own marker (uploads by this plugin): uuid is exact; the copy name separates
+	-- virtual copies even after "Import from Another Catalog".
+	local marker = JpegXmp.fromExif(exif)
+	if marker.uuid then
+		for _, c in ipairs(candidates) do
+			if c.key == marker.uuid then
+				return c.key, "marker:uuid"
+			end
+		end
+	end
+	if marker.copy then
+		local hits = {}
+		for _, c in ipairs(candidates) do
+			if (c.copyName or "") == marker.copy then
+				hits[#hits + 1] = c
+			end
+		end
+		if #hits == 1 then
+			return hits[1].key, "marker:copy"
+		end
+	end
 	local pool = candidates
 	local serial = exif.SerialNumber
 	if serial and serial ~= "" then

@@ -200,6 +200,11 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - Lightroom copies plugin fields to a new virtual copy, so the copy starts with its master's `flickrId` and fingerprints. Observed 2026-10-24: a cropped copy was planned as "replace" of the master's Flickr photo (blocked only by the non-Pro dialog).
 - `CatalogState.load`/`matcherRecords` therefore drop the fields of a virtual copy whose `flickrId` equals its master's (`copiedFields` event). The copy is then a new photo for Flickr, and only its own privacy override is kept.
 - Matching: master and copy share time, names and EXIF. Pixel size, then aspect ratio, tells differently cropped copies apart; otherwise they go to review.
+- **Marker** (`JpegXmp.lua`, since 2026-10-24): before upload, the rendered JPEG gets `lrflickr:uuid` (LR photo uuid) and `lrflickr:copy` (copy name, "" for masters) in namespace `http://lrflickr.invalid/ns/1.0/`.
+  - The attributes go into the first `rdf:Description` of LR's XMP packet; a JPEG without one gets a minimal packet. Image data is untouched (verified with exiftool).
+  - Matching checks the marker before anything else in the EXIF tie-break: the uuid exactly, then the copy name (survives "Import from Another Catalog").
+  - Flickr does not return LR's develop settings (`XMP-crs`) via `getExif`, so b/w or other develop differences are not visible in metadata otherwise.
+  - After the first upload of each run, `getExif` checks that Flickr returns the marker (`markerCheck` event) **[verify]**.
 
 ## 6a. Albums (implemented, verified in LrC 2026-10-24)
 

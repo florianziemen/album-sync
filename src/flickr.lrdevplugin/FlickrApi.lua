@@ -547,8 +547,13 @@ function M:exif(photoId)
 		if type(raw) == "table" then
 			raw = raw._content
 		end
-		if entry.tag and raw ~= nil and out[entry.tag] == nil then
-			out[entry.tag] = tostring(raw)
+		if entry.tag and raw ~= nil then
+			if out[entry.tag] == nil then
+				out[entry.tag] = tostring(raw)
+			end
+			if entry.tagspace then
+				out[entry.tagspace .. ":" .. entry.tag] = tostring(raw)
+			end
 		end
 	end
 	return out

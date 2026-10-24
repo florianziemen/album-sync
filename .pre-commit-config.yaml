@@ -6,7 +6,7 @@ repos:
         entry: stylua
         language: system
         types: [lua]
-        exclude: ^src/flickr\.lrdevplugin/json\.lua$
+        exclude: ^src/flockr\.lrdevplugin/json\.lua$
       - id: luacheck
         name: luacheck
         entry: luacheck

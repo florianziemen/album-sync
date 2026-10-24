@@ -30,7 +30,7 @@ local PhotoFields = require("PhotoFields")
 local RateLimiter = require("RateLimiter")
 local ReviewQueue = require("ReviewQueue")
 
-local log = LrLogger("lrflickr")
+local log = LrLogger("flockr")
 log:enable("logfile")
 
 local function fatal(message)
@@ -154,7 +154,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	for _, r in ipairs(records) do
 		recordByKey[r.key] = r
 	end
-	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), "lrflickr-review")
+	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), "flockr-review")
 	LrFileUtils.createAllDirectories(dir)
 
 	local linkedCount, dismissed, auto, settled = 0, 0, 0, 0

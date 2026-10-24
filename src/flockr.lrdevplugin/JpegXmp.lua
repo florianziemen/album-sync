@@ -1,6 +1,6 @@
 --[[
 Adds an identification marker to the XMP packet of a JPEG (docs/DESIGN.md §6c):
-dc:identifier = "lrflickr:uuid=<Lightroom photo uuid>;copy=<virtual copy name>".
+dc:identifier = "flockr:uuid=<Lightroom photo uuid>;copy=<virtual copy name>".
 Flickr's getExif only returns XMP namespaces it knows (a custom namespace was dropped,
 2026-10-24), so the marker uses Dublin Core, which Flickr returns and Lightroom leaves empty.
 Pure string manipulation of the JPEG container: image data is not touched.
@@ -12,7 +12,9 @@ earlier marker); a JPEG without XMP gets a minimal packet after its APPn segment
 local M = {}
 
 M.DC = "http://purl.org/dc/elements/1.1/"
-M.TAG = "lrflickr:"
+M.TAG = "flockr:"
+-- Marker prefix used before the rename (test uploads); still recognized.
+M.OLD_TAGS = { "lrflickr:" }
 
 local XMP_ID = "http://ns.adobe.com/xap/1.0/\0"
 local MAX_PAYLOAD = 65533 -- segment length field covers itself (2 bytes) + payload
@@ -41,6 +43,12 @@ function M.parse(value)
 		return nil
 	end
 	local uuid, copy = value:match("^%s*" .. M.TAG .. "uuid=([^;]*);copy=(.*)$")
+	for _, old in ipairs(M.OLD_TAGS) do
+		if uuid then
+			break
+		end
+		uuid, copy = value:match("^%s*" .. old .. "uuid=([^;]*);copy=(.*)$")
+	end
 	if not uuid then
 		return nil
 	end
@@ -52,6 +60,9 @@ end
 function M.patchPacket(packet, props)
 	-- Drop a marker from an earlier run (re-upload of the same file).
 	packet = packet:gsub('%s+dc:identifier="' .. M.TAG .. '[^"]*"', "")
+	for _, old in ipairs(M.OLD_TAGS) do
+		packet = packet:gsub('%s+dc:identifier="' .. old .. '[^"]*"', "")
+	end
 	local s, e = packet:find("<rdf:Description", 1, true)
 	if not s then
 		return nil, "no rdf:Description in XMP packet"

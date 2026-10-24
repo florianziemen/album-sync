@@ -7,7 +7,7 @@ Requests a token (step 1 of the login flow) and prints the authorize URL.
 Uses curl; secrets are read from the environment and never printed.
 ]]
 
-package.path = "src/flickr.lrdevplugin/?.lua;" .. package.path
+package.path = "src/flockr.lrdevplugin/?.lua;" .. package.path
 
 local FlickrAuth = require("FlickrAuth")
 local OAuth = require("OAuth")

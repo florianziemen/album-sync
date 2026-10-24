@@ -46,7 +46,7 @@ local Uploader = require("Uploader")
 
 local RENDER_AHEAD = 2
 
-local log = LrLogger("lrflickr")
+local log = LrLogger("flockr")
 log:enable("logfile")
 
 -- One structured log line per event: "PUBLISH t=... ev=... k=v ...".
@@ -662,7 +662,7 @@ local function askConflicts(functionContext, conflicted)
 		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
 		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
 	end
-	rows[#rows + 1] = f:static_text({ title = "Details per photo are in the log (lrflickr.log)." })
+	rows[#rows + 1] = f:static_text({ title = "Details per photo are in the log (flockr.log)." })
 	rows.bind_to_object = props
 	rows.spacing = f:control_spacing()
 	local result = LrDialogs.presentModalDialog({
@@ -993,7 +993,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
 	local pool = TaskPool.new(parallel, {
 		spawn = function(fn)
-			LrTasks.startAsyncTask(fn, "lrflickr upload")
+			LrTasks.startAsyncTask(fn, "flockr upload")
 		end,
 		sleep = LrTasks.sleep,
 		pcall = LrTasks.pcall,
@@ -1077,7 +1077,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			"Flickr: changes made on Flickr were kept",
 			string.format(
 				"%d photo(s) have changes made on Flickr (title, description, tags, privacy or location) that "
-					.. "Lightroom does not have. They were not overwritten. Details are in lrflickr.log.",
+					.. "Lightroom does not have. They were not overwritten. Details are in flockr.log.",
 				flickrOnly
 			),
 			"info"

@@ -11,7 +11,7 @@ local HttpTransport = require("HttpTransport")
 -- LrDate counts from 2001-01-01 UTC.
 local UNIX_OFFSET = 978307200
 
-local logger = LrLogger("lrflickr")
+local logger = LrLogger("flockr")
 logger:enable("logfile")
 
 local seeded = false

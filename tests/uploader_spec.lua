@@ -264,7 +264,7 @@ describe("Uploader marker checks", function()
 	local function exifFor(markers)
 		return function(_, id)
 			local uuid = markers[id]
-			return uuid and { ["XMP-dc:Identifier"] = "lrflickr:uuid=" .. uuid .. ";copy=" } or {}
+			return uuid and { ["XMP-dc:Identifier"] = "flockr:uuid=" .. uuid .. ";copy=" } or {}
 		end
 	end
 

@@ -16,7 +16,7 @@ Non-goals for v1: videos, group pools, Lightroom (cloud), Lightroom Classic < 13
 | Product | License | Notes |
 |---|---|---|
 | Adobe built-in Flickr service | Proprietary (Adobe EULA) | Declared unsupported by Adobe staff (May 2025). Duplicates on republish, no retry, no matching. |
-| SDK sample `flickr.lrdevplugin` | Adobe Developer Terms | Broken (legacy auth). Terms allow distribution in object code only and forbid open-source combination. **Do not read or copy.** |
+| SDK sample `flockr.lrdevplugin` | Adobe Developer Terms | Broken (legacy auth). Terms allow distribution in object code only and forbid open-source combination. **Do not read or copy.** |
 | Jeffrey Friedl "Export to Flickr" | Donationware, closed | Most features (association of earlier uploads, groups, comments). Last release 2024-10. **Do not read or copy.** |
 | Open source | — | None maintained. |
 
@@ -55,7 +55,7 @@ Pure-Lua core modules have no `Lr*` imports and are unit-tested with busted. LR 
 The plugin folder is flat, because Lightroom's `require` loads modules from the plugin root. Adapters (`HttpTransport`, `AppDeps`, `PhotoRenderer`, `CredentialStore`, `ServiceProvider`, `*MenuItem`) call `import`. All other modules are pure core. Own modules must never be named `Lr*`, because Lightroom resolves such names as its own toolkit scripts. `LrRender` failed to load ("Could not load toolkit script").
 
 ```
-src/flickr.lrdevplugin/
+src/flockr.lrdevplugin/
   Info.lua                  plugin manifest
   Sha1.lua, Base64.lua      hashing / encoding                   (core, done)
   OAuth.lua                 OAuth 1.0a signing                   (core, done)
@@ -113,7 +113,7 @@ Per batch, in `processRenderedPhotos`:
 - **Async upload** (`Uploader.lua`): `async=1` returns a ticket, and `checkTickets` is polled with backoff (1 s up to 15 s, at most 300 s).
   - A ticket still processing at timeout is **not** re-uploaded. The journal keeps it, and the next publish links it; until then the photo is held back (`waitPending`).
   - Complete=2 (Flickr could not process the file) is a permanent failure.
-- **Journal** (`Journal.lua`, `JsonFile.lua`): one JSON file per catalog in LR's app-support folder (`lrflickr/journal-<catalog hash>.json`), written atomically.
+- **Journal** (`Journal.lua`, `JsonFile.lua`): one JSON file per catalog in LR's app-support folder (`flockr/journal-<catalog hash>.json`), written atomically.
   - An entry (keyed by photo uuid, holding title and start time) is written *before* sending, then gets the ticket and later the photo ID. It is closed only after the ID is stored in the catalog.
   - At the start of every publish, open entries are reconciled: by photo ID, by ticket, or else by searching own uploads since the attempt started. Found photos get `flickrId` and are then relinked by the planner. Photos not found are dropped. Several candidates mean `ambiguous`: the photo is held back and the candidates are logged.
 - **Duplicate-safe retries:**
@@ -202,9 +202,9 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - Lightroom copies plugin fields to a new virtual copy, so the copy starts with its master's `flickrId` and fingerprints. Observed 2026-10-24: a cropped copy was planned as "replace" of the master's Flickr photo (blocked only by the non-Pro dialog).
 - `CatalogState.load`/`matcherRecords` therefore trust a virtual copy's `flickrId` only if this copy itself is recorded with that ID in one of the plugin's published collections, which is true for every real upload or link. Otherwise the fields are dropped (`copiedFields` event): the copy is a new photo for Flickr, and only its own privacy override is kept. The first version compared only with the master's ID and missed copies made from other copies (observed 2026-10-24: 3 of 6 copies planned as replace).
 - Matching: master and copy share time, names and EXIF. Pixel size, then aspect ratio, tells differently cropped copies apart; otherwise they go to review.
-- **Marker** (`JpegXmp.lua`): before upload, the rendered JPEG gets `dc:identifier = "lrflickr:uuid=<LR photo uuid>;copy=<copy name>"` in its XMP.
+- **Marker** (`JpegXmp.lua`): before upload, the rendered JPEG gets `dc:identifier = "flockr:uuid=<LR photo uuid>;copy=<copy name>"` in its XMP.
   - The attribute goes into the first `rdf:Description`, declaring the dc namespace only if missing; a JPEG without XMP gets a minimal packet. Image data is untouched (verified with exiftool).
-  - Flickr's `getExif` drops unknown XMP namespaces: a custom `lrflickr` namespace did not come back (2026-10-24). Dublin Core is returned and is not used by LR. The marker is visible in Flickr's EXIF view.
+  - Flickr's `getExif` drops unknown XMP namespaces: a custom `flockr` namespace did not come back (2026-10-24). Dublin Core is returned and is not used by LR. The marker is visible in Flickr's EXIF view.
   - Matching checks the marker before anything else in the EXIF tie-break: the uuid exactly, then the copy name (survives "Import from Another Catalog").
   - Flickr does not return LR's develop settings (`XMP-crs`), so b/w or other develop differences are not visible in metadata otherwise.
   - After the first upload of each run, `getExif` checks that Flickr returns the marker (`markerCheck` event, with the namespaces returned). Verified 2026-10-24: uuid and copy name came back (`XMP-dc`).
@@ -263,11 +263,11 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **Read-only on Flickr:** a `perms=read` login is enough. Logins are per account with read/write/delete permission (`CredentialStore`), and publishing needs write. The catalog must use exactly one Flickr account (`AccountGuard.catalogAccount`).
 - **Catalog side:** capture time comes from `dateTimeOriginalISO8601` (first 19 characters, wall clock), names from `fileName` and `preservedFileName`, aspect ratio from `croppedDimensions`. Values are read in batches.
 - **Album pruning:** albums whose `date_update` is earlier than the catalog's first capture time minus 2 days are not fetched, because a photo is added to an album after it was taken. Photos whose camera clock was off by more than that can be missed in such old albums; they still appear via the photostream listing. First real run (about 500–1000 albums): about 1 album per second without pruning.
-- **Flickr side:** albums are cached per account (`lrflickr/albums-<nsid>.json`, refetched when `date_update` changes). Photos taken in the catalog range come from `people.getPhotos`, with the window split while it exceeds 3500 results.
+- **Flickr side:** albums are cached per account (`flockr/albums-<nsid>.json`, refetched when `date_update` changes). Photos taken in the catalog range come from `people.getPhotos`, with the window split while it exceeds 3500 results.
 - **Matching:** same second, then a unique title against the file or preserved name or the LR title (plugin uploads carry the LR title), then a unique pixel size (±2 px; exact for full-size exports, so it separates crops that keep the ratio), then a unique aspect ratio (1%; for resized exports). Title ties (virtual copies) use size, then aspect ratio. Free accounts get no `o_dims` (since 2025), so the aspect ratio then comes from the `url_l` rendition (`width_l`/`height_l`), and pixel size is unavailable. Everything else goes to review: ties, single candidates with a different crop, duplicates on Flickr, and photos already linked to another ID. Photos without a candidate are not in this catalog and are ignored.
 - **Linking:** one collection per album under a set named after the year of the album's newest photo. Existing collections with the same remote ID are reused. The collection gets the album's remote ID and URL, and photos are added with `addPhotoByRemoteId(…, true)`. The plugin fields `flickrId`, `flickrState` and the current fingerprints are set, so nothing is pushed until the photo changes in LR. Matched photos in no album go to "Photostream". Writes go in chunks of 500 per gate.
 - **EXIF tie-break (tier 3):** "same time" review cases get one `photos.getExif` each during import and review. The camera serial narrows the candidates, then `PreservedFileName` (or `RawFileName`) is compared with the LR names, then `SubSecTimeOriginal` with the LR sub-second (from the fraction in `dateTimeOriginalISO8601`, else from the raw `dateTimeOriginal`). The raw values are logged for verification. **Verified 2026-10-24:** 846 albums, a 254-photo test catalog; 4 burst cases resolved by `PreservedFileName`. Whether LR's capture time includes sub-seconds is not verified yet.
-- **Review queue:** `lrflickr/review-<catalog>.json`. The command "Flickr: Review unclear matches…" tries EXIF first. Otherwise it shows the Flickr preview (`getSizes`, Small 320) next to the candidates (`catalog_photo`), and the user links one, dismisses ("not in this catalog") or defers. Albums are looked up with `getAllContexts` at link time; a photo in no album goes to Photostream.
+- **Review queue:** `flockr/review-<catalog>.json`. The command "Flickr: Review unclear matches…" tries EXIF first. Otherwise it shows the Flickr preview (`getSizes`, Small 320) next to the candidates (`catalog_photo`), and the user links one, dismisses ("not in this catalog") or defers. Albums are looked up with `getAllContexts` at link time; a photo in no album goes to Photostream.
 
 **Known failure modes.**
 
@@ -323,8 +323,8 @@ Throttle all API calls to at most 1 per second, which stays below 3600 per hour 
 2. Render control: how far ahead LR renders; options 5.2(a) and (b).
 3. `skipRender` inside `processRenderedPhotos` for metadata-only and add-to-album actions.
 
-   Spikes 2 and 3 are instrumented in the "Flickr (dev)" publish service (`ServiceProvider.lua`):
-   - Each step writes a `SPIKE` line to `lrflickr.log`: wait time per rendition, and the files and bytes in the render folder.
+   Spikes 2 and 3 are instrumented in the "Flockr" publish service (`ServiceProvider.lua`):
+   - Each step writes a `SPIKE` line to `flockr.log`: wait time per rendition, and the files and bytes in the render folder.
    - The pre-pass calls `skipRender()` for photos that are already published.
    - Dry-run mode simulates a slow upload.
 

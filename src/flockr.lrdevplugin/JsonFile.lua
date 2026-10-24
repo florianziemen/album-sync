@@ -1,5 +1,5 @@
 --[[
-JSON file storage ({ load, save }) in Lightroom's application-support folder (lrflickr/),
+JSON file storage ({ load, save }) in Lightroom's application-support folder (flockr/),
 written via a temp file so a crash never leaves a half-written file. Used for the upload
 journal (per catalog) and the album cache (per account).
 ]]
@@ -18,7 +18,7 @@ function M.catalogKey()
 end
 
 function M.path(fileName)
-	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("appData"), "lrflickr")
+	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("appData"), "flockr")
 	LrFileUtils.createAllDirectories(dir)
 	return LrPathUtils.child(dir, fileName)
 end

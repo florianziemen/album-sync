@@ -4,7 +4,7 @@ Lightroom Classic publish-service plugin for Flickr. MIT licensed. See `docs/DES
 
 ## Rules
 
-- **Clean room.** Do not read, copy or adapt Adobe's SDK sample plugins (including `flickr.lrdevplugin`) or Jeffrey Friedl's plugins or libraries. Use only the public SDK API reference and the Flickr API docs.
+- **Clean room.** Do not read, copy or adapt Adobe's SDK sample plugins (including `flockr.lrdevplugin`) or Jeffrey Friedl's plugins or libraries. Use only the public SDK API reference and the Flickr API docs.
 - Third-party code must be MIT, BSD, Apache-2.0 or public domain. Put it in the plugin folder next to a `<file>.LICENSE` file and list it in `THIRD_PARTY.md`.
 - The plugin folder is flat (Lightroom's `require` loads from the plugin root only). Adapters (files that call `import`): `HttpTransport`, `AppDeps`, `PhotoRenderer`, `CredentialStore`, `ServiceProvider` and `*MenuItem`. Everything else is pure core with injected dependencies.
 - **Never name own modules `Lr*`.** Lightroom treats such `require` names as its own toolkit scripts and fails with "Could not load toolkit script".
@@ -22,7 +22,7 @@ Lightroom Classic publish-service plugin for Flickr. MIT licensed. See `docs/DES
 - Lint and format: luacheck and StyLua (tabs, width 120), run via pre-commit (`pre-commit install`). ruff for Python tools.
 - Tests: busted (`tests/`; config in `.busted`), run on demand and in GitHub Actions on Lua 5.1. Locally: `busted` with a Lua 5.1/LuaJIT rocks tree.
 - Live OAuth check without Lightroom: `FLICKR_KEY=… FLICKR_SECRET=… luajit tools/request_token.lua`.
-- Install in Lightroom: File > Plug-in Manager > Add > `src/flickr.lrdevplugin`. Log: `lrflickr.log` in Lightroom's logs folder.
+- Install in Lightroom: File > Plug-in Manager > Add > `src/flockr.lrdevplugin`. Log: `flockr.log` in Lightroom's logs folder.
 - Commits: conventional commit titles (`feat:`, `fix:`, `docs:`, `refactor:`).
 
 Keep this file updated when the conventions change.

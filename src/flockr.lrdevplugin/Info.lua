@@ -1,11 +1,11 @@
 return {
 	LrSdkVersion = 13.0,
 	LrSdkMinimumVersion = 13.0,
-	LrToolkitIdentifier = "io.github.lightroom-flickr",
-	LrPluginName = "Flickr Publish (open source)",
+	LrToolkitIdentifier = "io.github.florianziemen.flockr",
+	LrPluginName = "Flockr",
 
 	LrExportServiceProvider = {
-		title = "Flickr (dev)",
+		title = "Flockr",
 		file = "ServiceProvider.lua",
 	},
 

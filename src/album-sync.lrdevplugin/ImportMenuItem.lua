@@ -153,7 +153,8 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: link existing albums", f
 
 	local progress = LrProgressScope({ title = "Album Sync: reading catalog and albums", functionContext = context })
 	progress:setCaption("Reading catalog…")
-	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
+	local publishedLinks = CatalogState.publishedLinks()
+	for _, ch in ipairs(CatalogState.repairFlickrIds(publishedLinks)) do
 		log:info(
 			string.format(
 				"import: repaired Flickr ID of %s: %s -> %s",
@@ -163,7 +164,7 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: link existing albums", f
 			)
 		)
 	end
-	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
+	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords(publishedLinks)
 	local range = ImportPlan.range(records)
 	if not range then
 		progress:done()

@@ -30,18 +30,31 @@ function M.load(photos)
 	return result
 end
 
---- { [photo.localIdentifier] = { [remoteId] = true } } over all plugin collections.
-function M.collectionIdsByPhoto()
-	local map = {}
+--[[
+Every published photo of this plugin's collections, in one walk:
+array of { photo, key = photo.localIdentifier, id = remote id (string) }. Several functions
+below take it as an optional argument, so callers walk the collections only once.
+]]
+function M.publishedLinks()
+	local out = {}
 	for _, c in ipairs(M.pluginCollections()) do
 		for _, pp in ipairs(c:getPublishedPhotos()) do
 			local rid = pp:getRemoteId()
 			if rid then
-				local key = pp:getPhoto().localIdentifier
-				map[key] = map[key] or {}
-				map[key][tostring(rid)] = true
+				local photo = pp:getPhoto()
+				out[#out + 1] = { photo = photo, key = photo.localIdentifier, id = tostring(rid) }
 			end
 		end
+	end
+	return out
+end
+
+--- { [photo.localIdentifier] = { [remoteId] = true } } over all plugin collections.
+function M.collectionIdsByPhoto(links)
+	local map = {}
+	for _, l in ipairs(links or M.publishedLinks()) do
+		map[l.key] = map[l.key] or {}
+		map[l.key][l.id] = true
 	end
 	return map
 end
@@ -52,11 +65,11 @@ virtual copy is created (from the master or from another copy), so a copy's Flic
 trusted if this copy itself is recorded with that id in a published collection of this plugin
 (true for every real upload or link). Masters are not affected.
 ]]
-function M.dropCopiedFields(fieldsByPhoto)
+function M.dropCopiedFields(fieldsByPhoto, links)
 	local byPhoto -- built lazily: only needed when a virtual copy carries a Flickr ID
 	for photo, fields in pairs(fieldsByPhoto) do
 		if fields.flickrId and photo:getRawMetadata("isVirtualCopy") then
-			byPhoto = byPhoto or M.collectionIdsByPhoto()
+			byPhoto = byPhoto or M.collectionIdsByPhoto(links)
 			local own = byPhoto[photo.localIdentifier]
 			if not (own and own[tostring(fields.flickrId)]) then
 				fieldsByPhoto[photo] = { copiedFrom = fields.flickrId, flickrPrivacy = fields.flickrPrivacy }
@@ -266,7 +279,8 @@ Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }, from th
 or, failing that, from this plugin's published collections), linkedIds (set of every linked
 Flickr id, see linkedFlickrIds).
 ]]
-function M.matcherRecords()
+function M.matcherRecords(links)
+	links = links or M.publishedLinks()
 	local catalog = LrApplication.activeCatalog()
 	local photos = catalog:getAllPhotos()
 	local raw = catalog:batchGetRawMetadata(
@@ -325,7 +339,7 @@ function M.matcherRecords()
 	for photo, f in pairs(withIds) do
 		fieldsCopy[photo] = { flickrId = f.flickrId }
 	end
-	M.dropCopiedFields(fieldsCopy)
+	M.dropCopiedFields(fieldsCopy, links)
 	for photo, f in pairs(withIds) do
 		if fieldsCopy[photo].flickrId then
 			linked[f.uuid] = f.flickrId
@@ -338,16 +352,13 @@ function M.matcherRecords()
 	for _, r in ipairs(records) do
 		uuidByLocal[byKey[r.key].localIdentifier] = r.key
 	end
-	for _, c in ipairs(M.pluginCollections()) do
-		for _, pp in ipairs(c:getPublishedPhotos()) do
-			local rid = pp:getRemoteId()
-			local uuid = rid and uuidByLocal[pp:getPhoto().localIdentifier]
-			if uuid and not linked[uuid] then
-				linked[uuid] = tostring(rid)
-			end
+	for _, l in ipairs(links) do
+		local uuid = uuidByLocal[l.key]
+		if uuid and not linked[uuid] then
+			linked[uuid] = l.id
 		end
 	end
-	return records, byKey, linked, M.linkedFlickrIds(linked)
+	return records, byKey, linked, M.linkedFlickrIds(linked, links)
 end
 
 --[[
@@ -355,18 +366,13 @@ Every Flickr id this catalog knows as linked: plugin fields (`linked` map values
 remote id in this plugin's published collections. A Flickr photo in this set must never be
 linked to another catalog photo.
 ]]
-function M.linkedFlickrIds(linked)
+function M.linkedFlickrIds(linked, links)
 	local ids = {}
 	for _, id in pairs(linked or {}) do
 		ids[tostring(id)] = true
 	end
-	for _, c in ipairs(M.pluginCollections()) do
-		for _, pp in ipairs(c:getPublishedPhotos()) do
-			local rid = pp:getRemoteId()
-			if rid then
-				ids[tostring(rid)] = true
-			end
-		end
+	for _, l in ipairs(links or M.publishedLinks()) do
+		ids[l.id] = true
 	end
 	return ids
 end
@@ -378,20 +384,19 @@ by "Import from Another Catalog"), the field is set to that id. Photos linked to
 different ids are left alone (re-uploads keep old ids in other collections).
 Returns array of { photo, from, to } changes.
 ]]
-function M.repairFlickrIds()
-	local idsByPhoto, photoByLocal = {}, {}
-	for _, c in ipairs(M.pluginCollections()) do
-		for _, pp in ipairs(c:getPublishedPhotos()) do
-			local rid = pp:getRemoteId()
-			if rid then
-				local photo = pp:getPhoto()
-				local key = photo.localIdentifier
-				photoByLocal[key] = photo
-				idsByPhoto[key] = idsByPhoto[key] or {}
-				idsByPhoto[key][tostring(rid)] = true
-			end
+function M.repairFlickrIds(links)
+	local idsByPhoto, photoByLocal, photos = {}, {}, {}
+	for _, l in ipairs(links or M.publishedLinks()) do
+		if not photoByLocal[l.key] then
+			photoByLocal[l.key] = l.photo
+			photos[#photos + 1] = l.photo
 		end
+		idsByPhoto[l.key] = idsByPhoto[l.key] or {}
+		idsByPhoto[l.key][l.id] = true
 	end
+	local fields = #photos > 0
+			and LrApplication.activeCatalog():batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
+		or {}
 	local changes = {}
 	for key, ids in pairs(idsByPhoto) do
 		local only, count = nil, 0
@@ -399,7 +404,7 @@ function M.repairFlickrIds()
 			only, count = id, count + 1
 		end
 		local photo = photoByLocal[key]
-		local field = photo:getPropertyForPlugin(_PLUGIN, "flickrId", nil, true)
+		local field = (fields[photo] or {}).flickrId
 		if count == 1 and tostring(field) ~= only then
 			changes[#changes + 1] = { photo = photo, from = field, to = only }
 		end

@@ -132,7 +132,9 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 	local service = CatalogState.publishService()
 
 	-- Repair stale Flickr ID fields first, also when there is nothing to review.
-	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
+	local reading = LrProgressScope({ title = "Album Sync: reading catalog…", functionContext = context })
+	local publishedLinks = CatalogState.publishedLinks()
+	for _, ch in ipairs(CatalogState.repairFlickrIds(publishedLinks)) do
 		log:info(
 			string.format(
 				"review: repaired Flickr ID of %s: %s -> %s",
@@ -148,11 +150,13 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 		items[i] = item
 	end
 	if #items == 0 then
+		reading:done()
 		LrDialogs.message("Album Sync: nothing to review", "There are no unclear matches for this catalog.", "info")
 		return
 	end
 
-	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
+	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords(publishedLinks)
+	reading:done()
 	local recordByKey = {}
 	for _, r in ipairs(records) do
 		recordByKey[r.key] = r

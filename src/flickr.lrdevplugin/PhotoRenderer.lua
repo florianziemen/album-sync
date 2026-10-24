@@ -9,6 +9,7 @@ local LrDate = import("LrDate")
 local LrExportSession = import("LrExportSession")
 local LrFileUtils = import("LrFileUtils")
 local LrPathUtils = import("LrPathUtils")
+local LrTasks = import("LrTasks")
 
 local M = {}
 
@@ -82,20 +83,33 @@ function M.renderer(baseSettings, folder)
 	settings.LR_collisionHandling = "rename"
 	settings.LR_reimportExportedPhoto = false
 
+	-- One background task owns each session: iterating renditions() starts its rendering
+	-- exactly once. (doExportOnNewTask + renditions() raced: "startRendering: can not call
+	-- twice on same session".)
 	local function start(photo)
-		local session = LrExportSession({ photosToExport = { photo }, exportSettings = settings })
-		session:doExportOnNewTask()
-		return { session = session, started = LrDate.currentTime() }
+		local job = { started = LrDate.currentTime() }
+		LrTasks.startAsyncTask(function()
+			local ok, err = LrTasks.pcall(function()
+				local session = LrExportSession({ photosToExport = { photo }, exportSettings = settings })
+				for _, rendition in session:renditions() do
+					job.ok, job.result = rendition:waitForRender()
+				end
+			end)
+			if not ok then
+				job.ok, job.result = false, "render task failed: " .. tostring(err)
+			elseif job.ok == nil then
+				job.ok, job.result = false, "no rendition produced"
+			end
+			job.done = true
+		end, "lrflickr render")
+		return job
 	end
 
-	-- Single-photo session: take its first (only) rendition.
 	local function await(job)
-		local iter, state, control = job.session:renditions()
-		local _, rendition = iter(state, control)
-		if not rendition then
-			return false, "no rendition produced"
+		while not job.done do
+			LrTasks.sleep(0.05)
 		end
-		return rendition:waitForRender()
+		return job.ok, job.result
 	end
 
 	return start, await

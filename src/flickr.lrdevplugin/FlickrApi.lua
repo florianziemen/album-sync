@@ -133,7 +133,21 @@ function M:call(method, params, httpMethod, check, expected)
 	return Retry.run(self.deps, method, once)
 end
 
+-- A missing file is a local, permanent failure (no retry, no duplicate search).
+function M:_missingFile(label, filePath)
+	if self.deps.fileSize and not self.deps.fileSize(filePath) then
+		local e = { class = "permanent", message = "rendered file not found: " .. tostring(filePath) }
+		self:_log("error", string.format("flickr %s: %s", label, e.message))
+		return e
+	end
+	return nil
+end
+
 function M:_postFile(label, url, filePath, fields)
+	local missing = self:_missingFile(label, filePath)
+	if missing then
+		return nil, missing
+	end
 	local req = {
 		method = "POST",
 		url = url,
@@ -153,6 +167,10 @@ end
 
 --- Async upload: returns a ticket id (poll with checkTickets) or nil, err.
 function M:uploadAsync(filePath, fields)
+	local missing = self:_missingFile("upload(async)", filePath)
+	if missing then
+		return nil, missing
+	end
 	local all = { async = "1" }
 	for k, v in pairs(fields or {}) do
 		all[k] = v

@@ -86,18 +86,25 @@ function M.renderer(baseSettings, folder)
 	-- One background task owns each session: iterating renditions() starts its rendering
 	-- exactly once. (doExportOnNewTask + renditions() raced: "startRendering: can not call
 	-- twice on same session".)
-	-- Same settings without GPS in the file (location not sent to Flickr: Flickr could
-	-- otherwise import it from the EXIF).
-	local noGps = {}
-	for k, v in pairs(settings) do
-		noGps[k] = v
-	end
-	noGps.LR_removeLocationMetadata = true
+	-- Each render gets its own subfolder: a master and its virtual copies share the file name,
+	-- and parallel renders into one folder collided (failed renders, files deleted under an
+	-- upload). stripGps: no GPS in the file (location not sent; Flickr could import it).
+	local counter = 0
 
 	-- item: an LrPhoto, or { photo, stripGps }.
 	local function start(item)
 		local photo = item.photo or item
-		local itemSettings = item.stripGps and noGps or settings
+		counter = counter + 1
+		local jobFolder = LrPathUtils.child(folder, tostring(counter))
+		LrFileUtils.createAllDirectories(jobFolder)
+		local itemSettings = {}
+		for k, v in pairs(settings) do
+			itemSettings[k] = v
+		end
+		itemSettings.LR_export_destinationPathPrefix = jobFolder
+		if item.stripGps then
+			itemSettings.LR_removeLocationMetadata = true
+		end
 		local job = { started = LrDate.currentTime() }
 		LrTasks.startAsyncTask(function()
 			local ok, err = LrTasks.pcall(function()

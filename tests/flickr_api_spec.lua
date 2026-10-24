@@ -167,3 +167,18 @@ describe("FlickrApi", function()
 		assert.equal("transient", e.class)
 	end)
 end)
+
+describe("FlickrApi missing files", function()
+	local FlickrApi2 = require("FlickrApi")
+	local helpers = require("tests.helpers")
+
+	it("fails permanently without sending when the rendered file is missing", function()
+		local deps = helpers.fakeDeps({}, {})
+		deps.fileSize = function()
+			return nil
+		end
+		local _, e = FlickrApi2.new(deps, helpers.CREDS, {}):uploadAsync("/tmp/gone.jpg", {})
+		assert.equal("permanent", e.class)
+		assert.equal(0, #deps.uploads)
+	end)
+end)

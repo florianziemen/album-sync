@@ -17,12 +17,12 @@ log:enable("logfile")
 
 local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerprint", "metadataState" }
 
-LrFunctionContext.postAsyncTaskWithContext("Flickr: forget link", function(context)
+LrFunctionContext.postAsyncTaskWithContext("Album Sync: forget link", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 	local catalog = LrApplication.activeCatalog()
 	local photos = catalog:getTargetPhotos()
 	if #photos == 0 then
-		LrDialogs.message("Flickr: forget link", "Select the photos first.", "info")
+		LrDialogs.message("Album Sync: forget link", "Select the photos first.", "info")
 		return
 	end
 	local answer = LrDialogs.confirm(

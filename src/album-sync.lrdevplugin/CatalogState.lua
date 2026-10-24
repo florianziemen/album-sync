@@ -245,7 +245,7 @@ function M.markDeleted(photos, staleLinks, unlink)
 			table.insert(byCollection[key].photos, link.photo)
 		end
 	end
-	LrApplication.activeCatalog():withWriteAccessDo("Flickr: mark photos deleted on Flickr", function()
+	LrApplication.activeCatalog():withWriteAccessDo("Album Sync: mark photos deleted on Flickr", function()
 		for _, photo in ipairs(photos) do
 			photo:setPropertyForPlugin(_PLUGIN, "flickrState", "deletedOnFlickr")
 			if unlink then
@@ -483,7 +483,7 @@ function M.linkPublished(collection, links, remote)
 	local first = true
 	local i = 1
 	repeat
-		catalog:withWriteAccessDo("Flickr: link existing photos", function()
+		catalog:withWriteAccessDo("Album Sync: link existing photos", function()
 			if first and remote then
 				collection:setRemoteId(remote.id)
 				collection:setRemoteUrl(remote.url)

@@ -36,7 +36,7 @@ log:enable("logfile")
 
 local function fatal(message)
 	log:error("review: " .. message)
-	LrDialogs.message("Flickr: review unclear matches", message, "critical")
+	LrDialogs.message("Album Sync: review unclear matches", message, "critical")
 end
 
 -- Download a small preview of the Flickr photo into `dir`; returns the file path or nil.
@@ -70,7 +70,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 		spacing = f:control_spacing(),
 		previewPath and f:picture({ value = previewPath, width = 320, height = 320 })
 			or f:static_text({ title = "(no preview)" }),
-		f:static_text({ title = "Flickr: " .. tostring(item.title or item.id) }),
+		f:static_text({ title = "On Flickr: " .. tostring(item.title or item.id) }),
 		f:static_text({ title = "Taken: " .. tostring(item.taken or "?") }),
 		f:static_text({ title = "Album: " .. tostring(item.album or "(none)") }),
 		UiText.wrapped(f, "Why unclear: " .. tostring(item.reason), 45),
@@ -100,7 +100,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 		f:radio_button({ title = "Decide later", value = LrView.bind("choice"), checked_value = "later" })
 
 	local result = LrDialogs.presentModalDialog({
-		title = string.format("Flickr: unclear match %d of %d", index, total),
+		title = string.format("Album Sync: unclear match %d of %d", index, total),
 		actionVerb = "Apply",
 		cancelVerb = "Stop reviewing",
 		contents = f:row({ bind_to_object = props, spacing = f:dialog_spacing(), f:column(left), f:column(right) }),
@@ -111,7 +111,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	return props.choice
 end
 
-LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", function(context)
+LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
@@ -146,7 +146,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 		items[i] = item
 	end
 	if #items == 0 then
-		LrDialogs.message("Flickr: nothing to review", "There are no unclear matches for this catalog.", "info")
+		LrDialogs.message("Album Sync: nothing to review", "There are no unclear matches for this catalog.", "info")
 		return
 	end
 
@@ -173,7 +173,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 				c.collection:getName()
 			)
 			log:error("review: " .. msg)
-			LrDialogs.message("Flickr: already linked", msg, "warning")
+			LrDialogs.message("Album Sync: already linked", msg, "warning")
 		end
 		if where == "" then
 			return false
@@ -255,7 +255,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	LrFileUtils.delete(dir)
 
 	LrDialogs.message(
-		"Flickr: review",
+		"Album Sync: review",
 		string.format(
 			"Linked %d photo(s) (%d automatically by EXIF), removed %d, %d were already linked. %d left for later.",
 			linkedCount,

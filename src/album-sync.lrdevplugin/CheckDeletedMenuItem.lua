@@ -25,10 +25,10 @@ log:enable("logfile")
 
 local function fatal(message)
 	log:error("check deleted: " .. message)
-	LrDialogs.message("Flickr: check for deleted photos", message, "critical")
+	LrDialogs.message("Album Sync: check for deleted photos", message, "critical")
 end
 
-LrFunctionContext.postAsyncTaskWithContext("Flickr: check for deleted photos", function(context)
+LrFunctionContext.postAsyncTaskWithContext("Album Sync: check for deleted photos", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
@@ -114,7 +114,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: check for deleted photos", f
 
 	if #photos == 0 and #stale == 0 then
 		LrDialogs.message(
-			"Flickr: no deleted photos found",
+			"Album Sync: no deleted photos found",
 			string.format("All %d Flickr photo(s) known to this catalog still exist.%s", #ids, unconfirmedNote),
 			"info"
 		)

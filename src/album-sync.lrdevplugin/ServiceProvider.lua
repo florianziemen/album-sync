@@ -154,12 +154,12 @@ local function connect(publishSettings, need, deps)
 	deps = deps or AppDeps()
 	local _, mixed = AccountGuard.catalogAccount(CatalogState.lockedAccounts())
 	if mixed and mixed.reason == "several" then
-		LrErrors.throwUserError("Flickr: " .. mixed.message)
+		LrErrors.throwUserError("Album Sync: " .. mixed.message)
 	end
 	local creds = CredentialStore.account(publishSettings.lockedNsid)
 	local user, e = AccountGuard.verify(deps, creds, publishSettings.lockedNsid, need)
 	if not user then
-		LrErrors.throwUserError("Flickr: " .. FlickrResponse.describe(e))
+		LrErrors.throwUserError("Album Sync: " .. FlickrResponse.describe(e))
 	end
 	return user, FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret }), creds
 end
@@ -200,7 +200,7 @@ function provider.renamePublishedCollection(publishSettings, info)
 	local ok, e = AlbumSync.rename(api, info.remoteId, info.name)
 	event("renameAlbum", { album = info.remoteId, err = e and e.message })
 	if not ok then
-		LrErrors.throwUserError("Flickr: could not rename the album: " .. FlickrResponse.describe(e))
+		LrErrors.throwUserError("Album Sync: could not rename the album: " .. FlickrResponse.describe(e))
 	end
 end
 
@@ -418,7 +418,7 @@ local function planBatch(session, renderSettings, settings, collectionSettings)
 	end)
 	if not ok then
 		log:error("planning failed: " .. tostring(err))
-		LrErrors.throwUserError("Flickr: planning failed: " .. tostring(err))
+		LrErrors.throwUserError("Album Sync: planning failed: " .. tostring(err))
 	end
 	return entries
 end
@@ -468,7 +468,7 @@ local function askNonPro(functionContext, count, allowDelete)
 	rows.bind_to_object = props
 	rows.spacing = f:control_spacing()
 	local result = LrDialogs.presentModalDialog({
-		title = "Flickr: image changes without Pro",
+		title = "Album Sync: image changes without Pro",
 		contents = f:column(rows),
 		actionVerb = "Continue",
 	})
@@ -482,7 +482,7 @@ local function resolveReplaces(functionContext, api, user, entries, counts, allo
 	end
 	local pro, e = api:isPro(user.id)
 	if pro == nil then
-		LrErrors.throwUserError("Flickr: could not check Pro status: " .. FlickrResponse.describe(e))
+		LrErrors.throwUserError("Album Sync: could not check Pro status: " .. FlickrResponse.describe(e))
 	end
 	event("proCheck", { pro = pro, replace = counts.replace })
 	if pro then
@@ -681,7 +681,7 @@ local function askConflicts(functionContext, conflicted)
 	rows.bind_to_object = props
 	rows.spacing = f:control_spacing()
 	local result = LrDialogs.presentModalDialog({
-		title = "Flickr: conflicting changes",
+		title = "Album Sync: conflicting changes",
 		contents = f:column(rows),
 		actionVerb = "Continue",
 	})
@@ -895,7 +895,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local blocked = { pending = {}, ambiguous = {} }
 	if not dryRun and #journal:openEntries() > 0 then
 		local scope = LrProgressScope({
-			title = string.format("Flickr: checking %d interrupted upload(s)…", #journal:openEntries()),
+			title = string.format("Album Sync: checking %d interrupted upload(s)…", #journal:openEntries()),
 			functionContext = functionContext,
 		})
 		blocked = reconcileJournal(uploader, journal)
@@ -904,7 +904,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
 	local renderSettings = PhotoRenderer.copySettings(settings)
 	if not renderSettings then
-		LrErrors.throwUserError("Flickr: could not read export settings for rendering.")
+		LrErrors.throwUserError("Album Sync: could not read export settings for rendering.")
 	end
 
 	local collectionSettings = {}
@@ -1092,7 +1092,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	event("end", { n = #entries, flickrOnly = flickrOnly })
 	if flickrOnly > 0 then
 		LrDialogs.message(
-			"Flickr: changes made on Flickr were kept",
+			"Album Sync: changes made on Flickr were kept",
 			string.format(
 				"%d photo(s) have changes made on Flickr (title, description, tags, privacy or location) that "
 					.. "Lightroom does not have. They were not overwritten. Details are in album-sync.log.",

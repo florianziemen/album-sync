@@ -37,7 +37,7 @@ log:enable("logfile")
 
 local function fatal(message)
 	log:error("import: " .. message)
-	LrDialogs.message("Flickr: link existing albums", message, "critical")
+	LrDialogs.message("Album Sync: link existing albums", message, "critical")
 end
 
 local function albumLine(plan)
@@ -76,7 +76,7 @@ local function choose(context, plan)
 	props.photostream = #plan.photostream.matches > 0
 	local s = plan.stats
 	local result = LrDialogs.presentModalDialog({
-		title = "Flickr: link existing albums",
+		title = "Album Sync: link existing albums",
 		actionVerb = "Link",
 		contents = f:column({
 			bind_to_object = props,
@@ -131,7 +131,7 @@ local function collectionName(album, used)
 	return name
 end
 
-LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", function(context)
+LrFunctionContext.postAsyncTaskWithContext("Album Sync: link existing albums", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 	local catalog = LrApplication.activeCatalog()
 	local deps = AppDeps()
@@ -151,7 +151,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	local api = FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
 	log:info(string.format("import: account %s (%s), perms=%s", user.username, user.id, tostring(creds.perms)))
 
-	local progress = LrProgressScope({ title = "Flickr: reading catalog and albums", functionContext = context })
+	local progress = LrProgressScope({ title = "Album Sync: reading catalog and albums", functionContext = context })
 	progress:setCaption("Reading catalog…")
 	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
 		log:info(
@@ -192,6 +192,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	log:info(
 		string.format("import: %d albums, %d from cache, %d skipped (unchanged before range)", #albums, cached, skipped)
 	)
+	progress:setPortionComplete(0, 1) -- new phase: the album bar was full
 	progress:setCaption("Reading photos taken in this catalog's range…")
 	local photostream
 	photostream, e = FlickrIndex.photosTaken(api, range.min, range.max, function(n)
@@ -216,7 +217,8 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 		end
 	end
 	if #exifCandidates > 0 then
-		local tie = LrProgressScope({ title = "Flickr: comparing EXIF of unclear matches", functionContext = context })
+		local tie =
+			LrProgressScope({ title = "Album Sync: comparing EXIF of unclear matches", functionContext = context })
 		for i, item in ipairs(exifCandidates) do
 			tie:setPortionComplete(i - 1, #exifCandidates)
 			local exif = api:exif(item.id)
@@ -285,13 +287,13 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 		return Linker.links(nsid, list, renderSettings, service:getPublishSettings())
 	end
 
-	local apply = LrProgressScope({ title = "Flickr: linking albums", functionContext = context })
+	local apply = LrProgressScope({ title = "Album Sync: linking albums", functionContext = context })
 	local existing = CatalogState.collectionsByRemoteId()
 	local linkedAlbums, linkedPhotos = 0, 0
 
 	-- Phase 1: create year sets and collections (new objects are usable after the gate).
 	local targets = {}
-	catalog:withWriteAccessDo("Flickr: create album collections", function()
+	catalog:withWriteAccessDo("Album Sync: create album collections", function()
 		local sets, used = {}, {}
 		for _, p in ipairs(plan.albums) do
 			if selected[p.album.id] and #p.matches > 0 then
@@ -392,7 +394,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	end
 
 	LrDialogs.message(
-		"Flickr: albums linked",
+		"Album Sync: albums linked",
 		string.format(
 			"Linked %d album(s) and %d photo(s) as already published.\n%d unclear match(es) added to the review queue "
 				.. "(%d in total).",

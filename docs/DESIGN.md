@@ -147,7 +147,12 @@ A "force replace" menu action covers changes that are invisible to the fingerpri
 2. `date_taken` string equals the LR local capture time (to the second), **and**
    - the title equals `fileName` or `preservedFileName` without extension, or
    - the aspect ratio of `o_dims` equals the cropped dimensions (±1%, either orientation).
-3. Tie-break with `photos.getExif` (SubSecTimeOriginal, ImageUniqueID, serial number). This costs one call per photo.
+3. Tie-break with `photos.getExif`. This costs one call per photo: at 3600/h, 50k photos take about 14 h. Run it only for unresolved photos, rate-limited and resumable. Keys verified on a LrC 15.4 export (2026-10-24):
+   - `PreservedFileName` (e.g. `FLO_5240.CR3`, survives import renaming) ↔ LR `preservedFileName`
+   - `DateTimeOriginal` + `SubSecTimeOriginal` (1/100 s) + `OffsetTimeOriginal` ↔ LR `dateTimeOriginal` **[check whether LR keeps sub-seconds]**
+   - Camera `SerialNumber` ↔ LR `cameraSerialNumber`; lens serial as an extra tie-breaker.
+   - Not usable: `ImageUniqueID` (not in exports), `OriginalDocumentID` (not the raw's MD5, not exposed by the SDK).
+   - Only works for uploads exported with full metadata.
 
 **Applying the result.**
 

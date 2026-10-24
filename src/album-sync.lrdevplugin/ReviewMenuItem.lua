@@ -4,7 +4,8 @@ File > Plug-in Extras > "Album Sync: Review unclear matches…"
 Works through the review queue of this catalog (read-only on Flickr). Each item first gets
 an EXIF tie-break; otherwise a dialog shows the Flickr photo next to the candidate catalog
 photos (with notes on virtual copies and identical files): link one, mark "not in this
-catalog" (removed from the queue), decide later, or stop and show the candidates in the Library.
+catalog" (removed from the queue), decide later, or stop and show the candidates in the
+collection "Album Sync: review candidates".
 Linked photos go into the collections of the photo's albums, else into "Photostream".
 ]]
 
@@ -18,6 +19,7 @@ local LrLogger = import("LrLogger")
 local LrPathUtils = import("LrPathUtils")
 local LrProgressScope = import("LrProgressScope")
 local LrShell = import("LrShell")
+local LrTasks = import("LrTasks")
 local LrView = import("LrView")
 
 local AccountGuard = require("AccountGuard")
@@ -394,9 +396,24 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 					for n, c in ipairs(candidates) do
 						photos[n] = c.photo
 					end
-					catalog:setActiveSources({ catalog.kAllPhotos })
+					-- A collection of its own: visible whatever source or filter was active.
+					local collection
+					catalog:withWriteAccessDo("Album Sync: review candidates", function()
+						collection = catalog:createCollection("Album Sync: review candidates", nil, true)
+						collection:removeAllPhotos()
+						collection:addPhotos(photos)
+					end)
+					catalog:setActiveSources({ collection })
+					LrTasks.sleep(0.5) -- the grid switches asynchronously; select after it has
 					catalog:setSelectedPhotos(photos[1], photos)
-					log:info("review: showing the candidates of flickr=" .. item.id .. " in the Library")
+					log:info(
+						string.format(
+							"review: showing %d candidates of flickr=%s in collection %q",
+							#photos,
+							item.id,
+							collection:getName()
+						)
+					)
 					break
 				elseif choice == "dismiss" then
 					queue:remove(item.id)

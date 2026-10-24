@@ -133,9 +133,9 @@ Per batch, in `processRenderedPhotos`:
 - All three injected faults recovered without duplicates. After the crash fault, the in-flight second upload finished in the background, and both photos were linked via the journal on the next run.
 - Crash with 3 parallel workers and 5 photos: one upload done plus 3 in flight completed after the abort. The next run reconciled 4 (relink) and uploaded the 1 that had never started, with no duplicates.
 
-**Open improvements:**
-- Poll all open tickets in one `checkTickets` call: per-worker polling consumes the rate limit, and album adds waited up to 2.8 s.
-- Skip the duplicate search for network errors that prove nothing was sent (for example "connection refused"). Today every transient upload error waits for up to 3 searches (about 15 s) before retrying.
+**Improvements (implemented):**
+- **Shared ticket polling** (`TicketPoller.lua`): all workers of a run register their tickets, and one `checkTickets` call covers all open tickets, at most every 1.5 s. Before, per-worker polling consumed the rate limit, and album adds waited up to 2.8 s.
+- **No duplicate search when nothing was sent:** network errors that prove the request never reached Flickr (NSURLError −1003 cannot find host, −1004 cannot connect, −1006 DNS failure, −1009 offline) set `notSent`, and the retry skips the search. Timeouts and lost connections stay ambiguous. The injected "before sending" fault is marked `notSent` too.
 
 ## 6. Change detection (fingerprints)
 

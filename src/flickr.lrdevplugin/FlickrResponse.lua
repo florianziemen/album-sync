@@ -38,9 +38,27 @@ local function err(class, code, message, resp)
 	return { class = class, code = code, message = message, requestId = requestId(resp) }
 end
 
+-- Network errors that prove the request never reached the server (macOS NSURLError codes):
+-- cannot find host, cannot connect, DNS lookup failed, not connected to the internet.
+local NOT_SENT = { [-1003] = true, [-1004] = true, [-1006] = true, [-1009] = true }
+local NOT_SENT_NAMES = {
+	cannotFindHost = true,
+	cannotConnectToHost = true,
+	dnsLookupFailed = true,
+	notConnectedToInternet = true,
+}
+
 local function httpFailure(resp)
 	if not resp or not resp.status then
-		return err("transient", nil, resp and resp.message or "network error", resp)
+		local e = err("transient", nil, resp and resp.message or "network error", resp)
+		local ne = resp and resp.networkError
+		if type(ne) == "table" then
+			e.notSent = NOT_SENT[tonumber(ne.errorCode)]
+				or NOT_SENT[tonumber(ne.nativeCode)]
+				or NOT_SENT_NAMES[ne.name]
+				or false
+		end
+		return e
 	end
 	if resp.status == 429 or resp.status >= 500 then
 		return err("transient", resp.status, "HTTP " .. resp.status, resp)

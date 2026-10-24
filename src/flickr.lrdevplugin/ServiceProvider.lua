@@ -41,6 +41,7 @@ local PublishPlanner = require("PublishPlanner")
 local RateLimiter = require("RateLimiter")
 local RenderQueue = require("RenderQueue")
 local TaskPool = require("TaskPool")
+local TicketPoller = require("TicketPoller")
 local Uploader = require("Uploader")
 
 local RENDER_AHEAD = 2
@@ -515,7 +516,7 @@ local function faultInjector(mode)
 			if mode == stage and once() then
 				event("faultInjected", { mode = mode })
 				local where = stage == "beforeSend" and "network error before sending" or "response lost after upload"
-				return { class = "transient", message = "injected fault: " .. where }
+				return { class = "transient", message = "injected fault: " .. where, notSent = stage == "beforeSend" }
 			end
 		end,
 		crash = function()
@@ -871,7 +872,8 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	if journal.corrupt then
 		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
 	end
-	local uploader = Uploader.new(deps, api, journal)
+	-- One ticket poll for all parallel uploads (saves API calls).
+	local uploader = Uploader.new(deps, api, journal, TicketPoller.new(api, deps))
 	local blocked = { pending = {}, ambiguous = {} }
 	if not dryRun and #journal:openEntries() > 0 then
 		local scope = LrProgressScope({

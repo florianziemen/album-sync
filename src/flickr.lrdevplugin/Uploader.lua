@@ -21,10 +21,11 @@ M.TICKET_TIMEOUT = 300 -- seconds to wait for Flickr to process an upload
 M.RECENT_CHECKS = 3 -- searches for a lost upload (new uploads may take a moment to show up)
 M.RECENT_SLACK = 120 -- seconds before the attempt start that still count (clock skew)
 
-function M.new(deps, api, journal)
+--- poller (optional): shared TicketPoller for all uploads of a run.
+function M.new(deps, api, journal, poller)
 	-- claimed: photo ids already attributed to some upload of this run (never matched twice,
 	-- e.g. virtual copies share a title).
-	return setmetatable({ deps = deps, api = api, journal = journal, claimed = {} }, M)
+	return setmetatable({ deps = deps, api = api, journal = journal, poller = poller, claimed = {} }, M)
 end
 
 function M:_log(level, msg)
@@ -126,7 +127,12 @@ function M:upload(key, path, fields, opts)
 		if fault then
 			return nil, fault
 		end
-		local photoId, waitErr = self:waitTicket(ticket)
+		local photoId, waitErr
+		if self.poller then
+			photoId, waitErr = self.poller:wait(ticket, M.TICKET_TIMEOUT)
+		else
+			photoId, waitErr = self:waitTicket(ticket)
+		end
 		if photoId then
 			return photoId
 		end
@@ -137,7 +143,12 @@ function M:upload(key, path, fields, opts)
 	end
 
 	local photoId, e = Retry.run(self.deps, "upload " .. tostring(fields.title), attempt, {
-		beforeRetry = function()
+		beforeRetry = function(err)
+			if err and err.notSent then
+				-- The request never left this machine: nothing to look for on Flickr.
+				self:_log("info", string.format("upload %s: not sent (%s), retrying without search", key, err.message))
+				return nil
+			end
 			local found, ambiguous = self:findRecent(fields.title, started)
 			if found then
 				self:_log("info", string.format("upload %s: found on Flickr after lost response: %s", key, found))

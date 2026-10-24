@@ -1,9 +1,20 @@
 --[[
 Decides about several Flickr copies of one catalog photo by the byte size of their originals
-(docs/DESIGN.md §7): identical size means the same file was uploaded more than once.
+(docs/DESIGN.md §7). Two exports of the same image are never byte-identical: Lightroom writes
+export time, document ids and current metadata into each file. Observed differences: 8 to
+about 1000 bytes on ~10 MB files. A real edit changes the compressed image data by far more.
+So sizes within TOLERANCE count as the same image.
 ]]
 
 local M = {}
+
+M.TOLERANCE_RATIO = 0.0005 -- 0.05 % of the file size
+M.TOLERANCE_MIN = 4096 -- bytes
+
+function M.sameImage(a, b)
+	local tolerance = math.max(M.TOLERANCE_MIN, M.TOLERANCE_RATIO * math.max(a, b))
+	return math.abs(a - b) <= tolerance
+end
 
 --[[
 ids: Flickr ids of the copies (at least 2). sizes: { [id] = bytes } (missing = unknown).
@@ -20,10 +31,10 @@ function M.decide(ids, sizes)
 		if not s then
 			return nil, "size unknown for " .. tostring(id)
 		end
-		if size and s ~= size then
-			return nil, "different sizes (different versions)"
+		if size and not M.sameImage(s, size) then
+			return nil, string.format("different sizes (%d vs %d bytes: different versions)", size, s)
 		end
-		size = s
+		size = size or s
 	end
 	local primary
 	for _, id in ipairs(ids) do

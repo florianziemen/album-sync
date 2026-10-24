@@ -54,22 +54,31 @@ function M.request(req)
 end
 
 --[[
-Byte size of a remote file without downloading it: a GET for the first byte only; the size
-is in Content-Range ("bytes 0-0/12345"). Returns bytes or nil, message.
+Byte size of a remote file without downloading it. First a HEAD request (Content-Length),
+then a GET for the first byte only (Content-Range "bytes 0-0/12345"). Flickr's image servers
+support both; whether LrHttp passes them through is checked at runtime (the method used is
+returned for the log). Returns bytes, method or nil, message.
 ]]
 function M.remoteSize(url)
+	local _, head = LrHttp.post(url, "", nil, "HEAD", TIMEOUT)
+	head = head or {}
+	if head.status == 200 then
+		local length = tonumber(headerTable(head)["content-length"])
+		if length and length > 0 then
+			return length, "HEAD"
+		end
+	end
 	local body, raw = LrHttp.get(url, { { field = "Range", value = "bytes=0-0" } }, TIMEOUT)
 	raw = raw or {}
-	local h = headerTable(raw)
 	if raw.status == 206 then
-		local total = tonumber((h["content-range"] or ""):match("/(%d+)%s*$"))
+		local total = tonumber((headerTable(raw)["content-range"] or ""):match("/(%d+)%s*$"))
 		if total then
-			return total
+			return total, "range"
 		end
 	elseif raw.status == 200 and body then
-		return #body -- server ignored the range: the whole file came back
+		return #body, "full download" -- range ignored
 	end
-	return nil, string.format("size of %s: status %s", url, tostring(raw.status))
+	return nil, string.format("size of %s: HEAD %s, GET %s", url, tostring(head.status), tostring(raw.status))
 end
 
 --- req: { url, params, filePath, fileField }. Returns { status, body, headers, message }.

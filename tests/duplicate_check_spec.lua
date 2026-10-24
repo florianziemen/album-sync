@@ -10,11 +10,17 @@ describe("DuplicateCheck.decide", function()
 		assert.equal("99", DuplicateCheck.decide({ "100", "99" }, { ["99"] = 1, ["100"] = 1 }).primary)
 	end)
 
+	it("treats re-exports of the same image as identical (metadata differs by a few bytes)", function()
+		local r = DuplicateCheck.decide({ "1", "2" }, { ["1"] = 9348633, ["2"] = 9348641 })
+		assert.equal("1", r.primary)
+		assert.is_truthy(DuplicateCheck.decide({ "1", "2" }, { ["1"] = 10463505, ["2"] = 10462462 }))
+	end)
+
 	it("does not decide on different or unknown sizes", function()
-		local r, why = DuplicateCheck.decide({ "1", "2" }, { ["1"] = 5, ["2"] = 6 })
+		local r, why = DuplicateCheck.decide({ "1", "2" }, { ["1"] = 9000000, ["2"] = 9100000 })
 		assert.is_nil(r)
 		assert.truthy(why:find("different", 1, true))
-		r, why = DuplicateCheck.decide({ "1", "2" }, { ["1"] = 5 })
+		r, why = DuplicateCheck.decide({ "1", "2" }, { ["1"] = 9000000 })
 		assert.is_nil(r)
 		assert.truthy(why:find("unknown", 1, true))
 	end)
@@ -53,7 +59,7 @@ describe("FlickrApi.originalSize", function()
 		local asked
 		deps.remoteSize = function(url)
 			asked = url
-			return 12345
+			return 12345, "HEAD"
 		end
 		local api = FlickrApi.new(deps, h.CREDS, {})
 		assert.equal(12345, api:originalSize("1"))

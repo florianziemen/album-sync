@@ -566,8 +566,19 @@ function M:originalSize(photoId)
 			if not self.deps.remoteSize then
 				return nil, { class = "permanent", message = "no remoteSize dependency" }
 			end
-			local bytes, err = self.deps.remoteSize(size.source)
-			self:_log(bytes and "info" or "error", string.format("original %s: %s", photoId, tostring(bytes or err)))
+			local t0 = self.deps.now()
+			local bytes, how = self.deps.remoteSize(size.source)
+			local err = not bytes and how or nil
+			self:_log(
+				bytes and "info" or "error",
+				string.format(
+					"original %s: %s (%s, %.1fs)",
+					photoId,
+					tostring(bytes or err),
+					tostring(bytes and how or "failed"),
+					self.deps.now() - t0
+				)
+			)
 			if not bytes then
 				return nil, { class = "transient", message = err }
 			end

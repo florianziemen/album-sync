@@ -9,7 +9,8 @@ flickr: array of { id, title, taken, takenUnknown, w, h } (FlickrApi.photoRecord
 
 Rules: candidates = catalog photos taken in the same second.
   exactly one candidate whose name equals the title (case-insensitive, extension ignored)
-    -> match "time+title"
+    -> match "time+title"; several (virtual copies) -> the one with the same aspect ratio
+    -> match "time+title+aspect"
   otherwise exactly one candidate with the same aspect ratio (1%, either orientation)
     -> match "time+aspect"
   candidates but no unique decision -> review
@@ -86,7 +87,18 @@ function M.match(catalog, flickr)
 			if #byTitle == 1 then
 				match(p, byTitle[1], "time+title")
 			elseif #byTitle > 1 then
-				review(p, byTitle, "same time and title (virtual copies?)")
+				-- Virtual copies share time and name; a different crop can still tell them apart.
+				local byBoth = {}
+				for _, c in ipairs(byTitle) do
+					if aspectMatches(p, c) then
+						byBoth[#byBoth + 1] = c
+					end
+				end
+				if #byBoth == 1 then
+					match(p, byBoth[1], "time+title+aspect")
+				else
+					review(p, #byBoth > 1 and byBoth or byTitle, "same time and title (virtual copies?)")
+				end
 			else
 				local byAspect, unknown = {}, false
 				for _, c in ipairs(cands) do

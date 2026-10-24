@@ -44,6 +44,16 @@ describe("Matcher", function()
 		assert.same({ "B" }, r.review[2].candidates)
 	end)
 
+	it("tells virtual copies apart by crop", function()
+		local catalog = {
+			{ key = "M", taken = T, names = { "IMG_1.CR3" }, aspect = 1.5 },
+			{ key = "V", taken = T, names = { "IMG_1.CR3" }, aspect = 1.0 }, -- square crop
+		}
+		local r = Matcher.match(catalog, { photo("1", "IMG_1", T, 6000, 4000), photo("2", "IMG_1", T, 4000, 4000) })
+		assert.same({ key = "M", how = "time+title+aspect" }, r.matches["1"])
+		assert.same({ key = "V", how = "time+title+aspect" }, r.matches["2"])
+	end)
+
 	it("reviews a single candidate with a different crop instead of guessing", function()
 		local catalog = { { key = "A", taken = T, names = { "x.CR3" }, aspect = 1.0 } }
 		local r = Matcher.match(catalog, { photo("1", "other", T, 6000, 4000) })

@@ -11,11 +11,11 @@ local LrFunctionContext = import("LrFunctionContext")
 local LrLogger = import("LrLogger")
 local LrProgressScope = import("LrProgressScope")
 
+local AccountGuard = require("AccountGuard")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
-local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local RateLimiter = require("RateLimiter")
 local RemoteCheck = require("RemoteCheck")
@@ -32,25 +32,17 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: check for deleted photos", f
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
-	local creds = CredentialStore.load()
-	if not creds.token then
-		return fatal("Not logged in. Use File > Plug-in Extras > Flickr: Log in.")
+	local nsid, e = AccountGuard.catalogAccount(CatalogState.lockedAccounts())
+	if not nsid then
+		return fatal(e.message)
 	end
-
-	-- Same account lock as publishing: the login must match a locked publish service.
-	local user, e = FlickrAuth.new(deps, creds):testLogin({ token = creds.token, tokenSecret = creds.tokenSecret })
+	local creds = CredentialStore.account(nsid)
+	local user
+	user, e = AccountGuard.verify(deps, creds, nsid, "read")
 	if not user then
 		return fatal(FlickrResponse.describe(e))
 	end
-	local locked = false
-	for _, nsid in ipairs(CatalogState.lockedAccounts()) do
-		locked = locked or nsid == user.id
-	end
-	if not locked then
-		return fatal(
-			string.format("No Flickr publish service in this catalog is locked to %s (%s).", user.username, user.id)
-		)
-	end
+	log:info(string.format("check deleted: account %s (%s)", tostring(user.username), user.id))
 
 	local progress = LrProgressScope({ title = "Checking Flickr for deleted photos", functionContext = context })
 	local links = CatalogState.knownLinks()

@@ -27,7 +27,6 @@ local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
-local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local Journal = require("Journal")
 local JournalFile = require("JournalFile")
@@ -89,15 +88,20 @@ function provider.metadataThatTriggersRepublish()
 	return { default = false, title = true, caption = true, keywords = true, gps = true, dateCreated = true }
 end
 
--- Verified account + API client for hooks outside processRenderedPhotos. Throws on failure.
-local function connect(publishSettings)
-	local deps = AppDeps()
-	local creds = CredentialStore.load()
-	local user, e = AccountGuard.verify(deps, creds, publishSettings.lockedNsid)
+-- Verified account + API client for the service's locked account. `need`: "read"|"write"|"delete".
+-- Also enforces one Flickr account per catalog. Throws on failure.
+local function connect(publishSettings, need, deps)
+	deps = deps or AppDeps()
+	local _, mixed = AccountGuard.catalogAccount(CatalogState.lockedAccounts())
+	if mixed and mixed.reason == "several" then
+		LrErrors.throwUserError("Flickr: " .. mixed.message)
+	end
+	local creds = CredentialStore.account(publishSettings.lockedNsid)
+	local user, e = AccountGuard.verify(deps, creds, publishSettings.lockedNsid, need)
 	if not user then
 		LrErrors.throwUserError("Flickr: " .. FlickrResponse.describe(e))
 	end
-	return user, FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
+	return user, FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret }), creds
 end
 
 -- Removing photos from a collection removes them from its album only; they stay on Flickr.
@@ -111,7 +115,7 @@ function provider.deletePhotosFromPublishedCollection(publishSettings, arrayOfPh
 		end
 		return
 	end
-	local _, api = connect(publishSettings)
+	local _, api = connect(publishSettings, "write")
 	for _, id in ipairs(arrayOfPhotoIds) do
 		local ok, e = AlbumSync.remove(api, albumId, id)
 		event("removeFromAlbum", { album = albumId, id = id, err = e and e.message })
@@ -132,7 +136,7 @@ function provider.renamePublishedCollection(publishSettings, info)
 	if info.isDefaultCollection or not info.remoteId or info.publishedCollection:type() ~= "LrPublishedCollection" then
 		return
 	end
-	local _, api = connect(publishSettings)
+	local _, api = connect(publishSettings, "write")
 	local ok, e = AlbumSync.rename(api, info.remoteId, info.name)
 	event("renameAlbum", { album = info.remoteId, err = e and e.message })
 	if not ok then
@@ -170,33 +174,29 @@ function provider.imposeSortOrderOnPublishedCollection(publishSettings, info, re
 	if info.isDefaultCollection or not info.remoteCollectionId then
 		return
 	end
-	local _, api = connect(publishSettings)
+	local _, api = connect(publishSettings, "write")
 	local _, e = AlbumSync.reorder(api, info.remoteCollectionId, remoteIdSequence)
 	event("reorderAlbum", { album = info.remoteCollectionId, n = #remoteIdSequence, err = e and e.message })
 end
 
-local function lockToCurrentLogin(propertyTable)
-	LrTasks.startAsyncTask(function()
-		local creds = CredentialStore.load()
-		if not creds.token then
-			propertyTable.lockStatus = "Not logged in. Use File > Plug-in Extras > Flickr: Log in."
-			return
-		end
-		local user, e = FlickrAuth.new(AppDeps(), creds)
-			:testLogin({ token = creds.token, tokenSecret = creds.tokenSecret })
-		if not user then
-			propertyTable.lockStatus = FlickrResponse.describe(e)
-			return
-		end
-		propertyTable.lockedNsid = user.id
-		propertyTable.lockedUsername = user.username
-		propertyTable.lockStatus = "Locked."
-	end)
+-- Pop-up items for the account lock: every logged-in account.
+local function accountItems()
+	local items = { { title = "(choose an account)", value = "" } }
+	for _, a in ipairs(CredentialStore.accounts()) do
+		items[#items + 1] = { title = string.format("%s (%s, %s)", a.username, a.nsid, a.perms), value = a.nsid }
+	end
+	return items
 end
 
 function provider.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
-	propertyTable.lockStatus = ""
+	propertyTable:addObserver("lockedNsid", function(props, _, nsid)
+		for _, a in ipairs(CredentialStore.accounts()) do
+			if a.nsid == nsid then
+				props.lockedUsername = a.username
+			end
+		end
+	end)
 	return {
 		{
 			title = "Flickr account",
@@ -208,17 +208,11 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:row({
 				f:static_text({ title = "Locked to:", width = 90 }),
-				f:static_text({ title = bind("lockedUsername"), width_in_chars = 20 }),
-				f:static_text({ title = bind("lockedNsid"), width_in_chars = 16 }),
+				f:popup_menu({ value = bind("lockedNsid"), items = accountItems(), width_in_chars = 40 }),
 			}),
-			f:row({
-				f:push_button({
-					title = "Lock to logged-in account",
-					action = function()
-						lockToCurrentLogin(propertyTable)
-					end,
-				}),
-				f:static_text({ title = bind("lockStatus"), fill_horizontal = 1 }),
+			f:static_text({
+				title = "Accounts are added with File > Plug-in Extras > Flickr: Log in. "
+					.. "Use one Flickr account per catalog.",
 			}),
 		},
 		{
@@ -337,7 +331,7 @@ local NON_PRO_CHOICES = {
 	},
 }
 
-local function askNonPro(functionContext, count)
+local function askNonPro(functionContext, count, allowDelete)
 	local f = LrView.osFactory()
 	local props = LrBinding.makePropertyTable(functionContext)
 	props.choice = NON_PRO_CHOICES[1].value
@@ -347,6 +341,11 @@ local function askNonPro(functionContext, count)
 		}),
 	}
 	for _, c in ipairs(NON_PRO_CHOICES) do
+		if c.value == "reuploadDelete" and not allowDelete then
+			rows[#rows + 1] =
+				f:static_text({ title = "(Deleting the old photo needs a login with “delete” permission.)" })
+			break
+		end
 		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
 		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
 	end
@@ -361,7 +360,7 @@ local function askNonPro(functionContext, count)
 end
 
 -- Replace needs Pro. Without it, ask once for the whole batch.
-local function resolveReplaces(functionContext, api, user, entries, counts)
+local function resolveReplaces(functionContext, api, user, entries, counts, allowDelete)
 	if not counts.replace then
 		return
 	end
@@ -373,7 +372,7 @@ local function resolveReplaces(functionContext, api, user, entries, counts)
 	if pro then
 		return
 	end
-	local choice = askNonPro(functionContext, counts.replace)
+	local choice = askNonPro(functionContext, counts.replace, allowDelete)
 	event("nonProChoice", { choice = choice, n = counts.replace })
 	for _, entry in ipairs(entries) do
 		if entry.action == "replace" then
@@ -581,14 +580,8 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local session = exportContext.exportSession
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
-	local creds = CredentialStore.load()
 	local dryRun = settings.dryRun == true
-
-	local user, e = AccountGuard.verify(deps, creds, settings.lockedNsid)
-	if not user then
-		LrErrors.throwUserError("Flickr: " .. FlickrResponse.describe(e))
-	end
-	local api = FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
+	local user, api, creds = connect(settings, dryRun and "read" or "write", deps)
 
 	local journal = Journal.new(JournalFile.storage())
 	if journal.corrupt then
@@ -638,7 +631,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		waitPending = counts.waitPending,
 		ambiguous = counts.ambiguous,
 	})
-	resolveReplaces(functionContext, api, user, entries, counts)
+	resolveReplaces(functionContext, api, user, entries, counts, AccountGuard.permsAllow(creds.perms, "delete"))
 
 	-- The album of this collection (nil for the default "Photostream" collection).
 	local info = exportContext.publishedCollectionInfo or {}

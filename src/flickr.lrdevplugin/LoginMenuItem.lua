@@ -1,13 +1,13 @@
 --[[
-Prototype: File > Plug-in Extras > "Flickr: Log in".
+File > Plug-in Extras > "Flickr: Log in".
 
-Asks for API key/secret, runs the OAuth oob flow, verifies with flickr.test.login,
-stores tokens in the keychain, and reports whether LrDigest supports HMAC-SHA1.
+Asks for API key/secret and the permission to grant (read / write / delete), runs the OAuth
+oob flow, verifies with flickr.test.login, and stores the token for that account in the
+keychain. Several accounts can be logged in; each publish service is locked to one.
 ]]
 
 local LrBinding = import("LrBinding")
 local LrDialogs = import("LrDialogs")
-local LrDigest = import("LrDigest")
 local LrFunctionContext = import("LrFunctionContext")
 local LrHttp = import("LrHttp")
 local LrLogger = import("LrLogger")
@@ -17,7 +17,6 @@ local CredentialStore = require("CredentialStore")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local AppDeps = require("AppDeps")
-local Sha1 = require("Sha1")
 
 local log = LrLogger("lrflickr")
 log:enable("logfile")
@@ -25,27 +24,12 @@ log:enable("logfile")
 local deps = AppDeps
 local describe = FlickrResponse.describe
 
--- Spike: does the built-in LrDigest offer HMAC-SHA1? Never fails, only reports.
-local function probeLrDigestHmacSha1()
-	local key, msg = "key", "The quick brown fox jumps over the lazy dog"
-	local expected = Sha1.hmacHex(key, msg)
-	local ok, result = pcall(function()
-		local h = LrDigest.HMAC.init("SHA1", key)
-		h:update(msg)
-		return h:digest()
-	end)
-	if not ok then
-		return "LrDigest.HMAC SHA1: unavailable (" .. tostring(result) .. ")"
-	end
-	local hex = type(result) == "string" and result:lower() or tostring(result)
-	return string.format("LrDigest.HMAC SHA1: returned %s; matches pure Lua: %s", hex, tostring(hex == expected))
-end
-
 local function askCredentials(context, stored)
 	local f = LrView.osFactory()
 	local props = LrBinding.makePropertyTable(context)
 	props.consumerKey = stored.consumerKey or ""
 	props.consumerSecret = stored.consumerSecret or ""
+	props.perms = "read"
 	local result = LrDialogs.presentModalDialog({
 		title = "Flickr API key",
 		contents = f:column({
@@ -60,6 +44,18 @@ local function askCredentials(context, stored)
 				f:static_text({ title = "Secret:", width = 60 }),
 				f:password_field({ value = LrView.bind("consumerSecret"), width_in_chars = 36 }),
 			}),
+			f:row({
+				f:static_text({ title = "Allow:", width = 60 }),
+				f:popup_menu({
+					value = LrView.bind("perms"),
+					items = {
+						{ title = "Read only (import, matching; can never change anything)", value = "read" },
+						{ title = "Read and write (publish)", value = "write" },
+						{ title = "Read, write and delete (publish, re-upload with delete)", value = "delete" },
+					},
+				}),
+			}),
+			f:static_text({ title = "Log in to the account you want in the browser (use a private window if needed)." }),
 		}),
 	})
 	local key = (props.consumerKey or ""):gsub("%s", "")
@@ -67,7 +63,7 @@ local function askCredentials(context, stored)
 	if result ~= "ok" or key == "" or secret == "" then
 		return nil
 	end
-	return { consumerKey = key, consumerSecret = secret }
+	return { consumerKey = key, consumerSecret = secret, perms = props.perms }
 end
 
 local function askVerifier(context)
@@ -92,12 +88,11 @@ end
 LrFunctionContext.postAsyncTaskWithContext("Flickr login", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
 
-	local stored = CredentialStore.load()
-	local creds = askCredentials(context, stored)
+	local creds = askCredentials(context, CredentialStore.app())
 	if not creds then
 		return
 	end
-	CredentialStore.save(creds)
+	CredentialStore.saveApp(creds.consumerKey, creds.consumerSecret)
 	local auth = FlickrAuth.new(deps(), creds)
 
 	local reqToken, e = auth:requestToken()
@@ -107,7 +102,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr login", function(context)
 		return
 	end
 
-	LrHttp.openUrlInBrowser(FlickrAuth.authorizeUrl(reqToken, "delete"))
+	LrHttp.openUrlInBrowser(FlickrAuth.authorizeUrl(reqToken, creds.perms))
 	local verifier = askVerifier(context)
 	if not verifier then
 		return
@@ -129,16 +124,10 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr login", function(context)
 		return
 	end
 
-	CredentialStore.save({
-		token = access.token,
-		tokenSecret = access.tokenSecret,
-		userNsid = user.id,
-		username = user.username,
-	})
-	local probe = probeLrDigestHmacSha1()
-	log:info("login ok for " .. tostring(user.id) .. "; " .. probe)
+	CredentialStore.saveAccount(user.id, user.username, creds.perms, access.token, access.tokenSecret)
+	log:info(string.format("login ok for %s (%s), perms=%s", tostring(user.username), tostring(user.id), creds.perms))
 	LrDialogs.message(
 		"Logged in to Flickr as " .. tostring(user.username),
-		"NSID: " .. tostring(user.id) .. "\n\n" .. probe
+		string.format("NSID: %s\nPermission: %s", tostring(user.id), creds.perms)
 	)
 end)

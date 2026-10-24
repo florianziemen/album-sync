@@ -205,7 +205,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
   - Flickr's `getExif` drops unknown XMP namespaces: a custom `lrflickr` namespace did not come back (2026-10-24). Dublin Core is returned and is not used by LR. The marker is visible in Flickr's EXIF view.
   - Matching checks the marker before anything else in the EXIF tie-break: the uuid exactly, then the copy name (survives "Import from Another Catalog").
   - Flickr does not return LR's develop settings (`XMP-crs`), so b/w or other develop differences are not visible in metadata otherwise.
-  - After the first upload of each run, `getExif` checks that Flickr returns the marker (`markerCheck` event, with the namespaces returned) **[verify]**.
+  - After the first upload of each run, `getExif` checks that Flickr returns the marker (`markerCheck` event, with the namespaces returned). Verified 2026-10-24: uuid and copy name came back (`XMP-dc`).
 
 ## 6a. Albums (implemented, verified in LrC 2026-10-24)
 

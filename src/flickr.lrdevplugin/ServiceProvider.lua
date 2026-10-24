@@ -29,7 +29,7 @@ local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
 local FlickrResponse = require("FlickrResponse")
 local Journal = require("Journal")
-local JournalFile = require("JournalFile")
+local JsonFile = require("JsonFile")
 local Fingerprint = require("Fingerprint")
 local PhotoFields = require("PhotoFields")
 local PhotoRenderer = require("PhotoRenderer")
@@ -583,7 +583,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local dryRun = settings.dryRun == true
 	local user, api, creds = connect(settings, dryRun and "read" or "write", deps)
 
-	local journal = Journal.new(JournalFile.storage())
+	local journal = Journal.new(JsonFile.storage("journal-" .. JsonFile.catalogKey() .. ".json"))
 	if journal.corrupt then
 		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
 	end

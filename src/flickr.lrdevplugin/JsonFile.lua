@@ -1,6 +1,7 @@
 --[[
-File storage for Journal: one journal per catalog in Lightroom's application-support folder,
-written via a temp file and rename so a crash never leaves a half-written journal.
+JSON file storage ({ load, save }) in Lightroom's application-support folder (lrflickr/),
+written via a temp file so a crash never leaves a half-written file. Used for the upload
+journal (per catalog) and the album cache (per account).
 ]]
 
 local LrApplication = import("LrApplication")
@@ -11,20 +12,24 @@ local Sha1 = require("Sha1")
 
 local M = {}
 
-function M.path()
+--- Short stable key for the active catalog (hash of its path).
+function M.catalogKey()
+	return Sha1.hex(LrApplication.activeCatalog():getPath()):sub(1, 12)
+end
+
+function M.path(fileName)
 	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("appData"), "lrflickr")
 	LrFileUtils.createAllDirectories(dir)
-	local catalogKey = Sha1.hex(LrApplication.activeCatalog():getPath()):sub(1, 12)
-	return LrPathUtils.child(dir, "journal-" .. catalogKey .. ".json")
+	return LrPathUtils.child(dir, fileName)
 end
 
 --[[
-Storage table for Journal.new. Lightroom's Lua has no os.rename, so a save writes a temp file,
+Storage table for Journal.new / FlickrIndex.Cache.new. Lightroom's Lua has no os.rename, so a save writes a temp file,
 deletes the old journal and moves the temp file into place; load falls back to the temp file
 if a crash happened between delete and move.
 ]]
-function M.storage()
-	local path = M.path()
+function M.storage(fileName)
+	local path = M.path(fileName)
 	local tmp = path .. ".tmp"
 	return {
 		path = path,
@@ -45,7 +50,7 @@ function M.storage()
 			end
 			LrFileUtils.move(tmp, path)
 			if not LrFileUtils.exists(path) then
-				error("could not write journal " .. path)
+				error("could not write " .. path)
 			end
 		end,
 	}

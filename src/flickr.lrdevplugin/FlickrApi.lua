@@ -315,6 +315,130 @@ function M:listOwnPhotoIds()
 	return ids, count, total
 end
 
+local function content(v)
+	if type(v) == "table" then
+		return v._content
+	end
+	return v
+end
+
+-- Compact photo record from a photo list entry (extras date_taken, o_dims).
+local function photoRecord(p)
+	return {
+		id = tostring(p.id),
+		title = content(p.title) or "",
+		taken = p.datetaken,
+		takenUnknown = tonumber(p.datetakenunknown) == 1,
+		w = tonumber(p.o_width),
+		h = tonumber(p.o_height),
+	}
+end
+M.photoRecord = photoRecord
+
+M.PHOTO_EXTRAS = "date_taken,o_dims"
+
+--- All own albums: array of { id, title, count, updated, created } or nil, err.
+function M:albums()
+	local out, page = {}, 1
+	local pages
+	repeat
+		local data, e = self:call(
+			"flickr.photosets.getList",
+			{ per_page = "500", page = tostring(page) },
+			nil,
+			function(d)
+				if type(d.photosets) ~= "table" then
+					return "photosets.getList: missing photosets"
+				end
+			end
+		)
+		if not data then
+			return nil, e
+		end
+		pages = tonumber(data.photosets.pages) or 1
+		for _, set in ipairs(data.photosets.photoset or {}) do
+			out[#out + 1] = {
+				id = tostring(set.id),
+				title = content(set.title) or "",
+				count = (tonumber(set.photos) or 0) + (tonumber(set.videos) or 0),
+				updated = tonumber(set.date_update),
+				created = tonumber(set.date_create),
+			}
+		end
+		page = page + 1
+	until page > pages
+	return out
+end
+
+--- Photos of one album (photoRecord array, album order) or nil, err.
+function M:albumPhotos(albumId)
+	local out, page = {}, 1
+	local pages
+	repeat
+		local data, e = self:call(
+			"flickr.photosets.getPhotos",
+			{
+				photoset_id = albumId,
+				extras = M.PHOTO_EXTRAS,
+				per_page = "500",
+				page = tostring(page),
+			},
+			nil,
+			function(d)
+				if type(d.photoset) ~= "table" then
+					return "photosets.getPhotos: missing photoset"
+				end
+			end
+		)
+		if not data then
+			return nil, e
+		end
+		pages = tonumber(data.photoset.pages) or 1
+		for _, p in ipairs(data.photoset.photo or {}) do
+			out[#out + 1] = photoRecord(p)
+		end
+		page = page + 1
+	until page > pages
+	return out
+end
+
+--[[
+One page of own photos taken in [minTaken, maxTaken] ("YYYY-MM-DD HH:MM:SS").
+Returns { photos = photoRecord array, page, pages, total } or nil, err.
+]]
+function M:photosTakenPage(minTaken, maxTaken, page)
+	local data, e = self:call(
+		"flickr.people.getPhotos",
+		{
+			user_id = "me",
+			min_taken_date = minTaken,
+			max_taken_date = maxTaken,
+			extras = M.PHOTO_EXTRAS,
+			per_page = "500",
+			page = tostring(page or 1),
+		},
+		nil,
+		function(d)
+			if type(d.photos) ~= "table" then
+				return "people.getPhotos: missing photos"
+			end
+		end
+	)
+	if not data then
+		return nil, e
+	end
+	local photos = {}
+	for _, p in ipairs(data.photos.photo or {}) do
+		photos[#photos + 1] = photoRecord(p)
+	end
+	return {
+		photos = photos,
+		page = tonumber(data.photos.page) or 1,
+		pages = tonumber(data.photos.pages) or 1,
+		total = tonumber(data.photos.total) or #photos,
+	}
+end
+
 --- Delete a photo on Flickr (needs perms=delete). Only on explicit user choice.
 function M:deletePhoto(photoId)
 	local _, e = self:call("flickr.photos.delete", { photo_id = photoId }, "POST")

@@ -9,6 +9,9 @@ Dependencies are injected:
   log(level, message)               optional; level "info" | "error"
   fileSize(path) -> bytes           optional, for diagnostics
   pcall                             optional; LrTasks.pcall in Lightroom (calls yield)
+  sleep(seconds)                    optional; enables retries of idempotent REST calls
+  random01() -> [0, 1)              optional; jitter for retries
+  limiter                           optional RateLimiter shared by all calls of a run
 creds = { consumerKey, consumerSecret }; access = { token, tokenSecret } or nil.
 
 Every exchange is logged as one summary line; failures additionally get a full,
@@ -17,11 +20,15 @@ redacted dump of request and response (Diagnostics).
 
 local OAuth = require("OAuth")
 local Diagnostics = require("Diagnostics")
+local Retry = require("Retry")
 local FlickrResponse = require("FlickrResponse")
 
 local REST_URL = "https://api.flickr.com/services/rest/"
 local UPLOAD_URL = "https://up.flickr.com/services/upload/"
 local REPLACE_URL = "https://up.flickr.com/services/replace/"
+
+-- REST methods that must not be retried blindly: a lost response may hide a success.
+local NOT_IDEMPOTENT = { ["flickr.photosets.create"] = true }
 
 local M = {}
 M.__index = M
@@ -57,6 +64,12 @@ parse whose shape is unexpected; it returns an error message or nil.
 Returns result or nil, err.
 ]]
 function M:exchange(label, send, req, parse, check)
+	if self.deps.limiter then
+		local waited = self.deps.limiter:acquire()
+		if waited > 0 then
+			self:_log("info", string.format("rate limit: waited %.1fs before %s", waited, label))
+		end
+	end
 	local t0 = self.deps.now()
 	local ok, resp = (self.deps.pcall or pcall)(send, req)
 	if not ok then
@@ -93,16 +106,23 @@ function M:call(method, params, httpMethod, check)
 	for k, v in pairs(params or {}) do
 		all[k] = v
 	end
-	return self:signedExchange(
-		method,
-		httpMethod or "GET",
-		REST_URL,
-		all,
-		self.access.token,
-		self.access.tokenSecret,
-		FlickrResponse.parseRest,
-		check
-	)
+	local function once()
+		-- Re-signed per attempt: fresh nonce and timestamp.
+		return self:signedExchange(
+			method,
+			httpMethod or "GET",
+			REST_URL,
+			all,
+			self.access.token,
+			self.access.tokenSecret,
+			FlickrResponse.parseRest,
+			check
+		)
+	end
+	if not self.deps.sleep or NOT_IDEMPOTENT[method] then
+		return once()
+	end
+	return Retry.run(self.deps, method, once)
 end
 
 function M:_postFile(label, url, filePath, fields)

@@ -122,7 +122,7 @@ Implemented in `Fingerprint.lua`. SHA-1 hex of a canonical serialization; this i
 - **Metadata fingerprint:** the fields as sent: title, description, and tags from `keywordTagsForExport` (sent with `setTags`, multi-word tags quoted). Location and privacy will follow.
 - **Planner** (`PublishPlanner.lua`): upload / relink (already on Flickr via `flickrId`) / replace / metadata / adopt (published before fingerprints existed: push metadata and store fingerprints) / noop.
 - **Replace without Pro:** one dialog per batch with two choices. "Update metadata only" sets `flickrState=imageOutdated`. "Leave as modified" sends nothing for those photos.
-- **Remote fingerprint:** the same metadata fields as returned by Flickr after the push. Used to detect edits made on Flickr.
+- **Remote fingerprint:** the same metadata fields as returned by Flickr after the push. Used to detect edits made on Flickr. It must be taken from Flickr's response, not from what we sent: on upload, Flickr also imports tags from the embedded IPTC/XMP keywords (observed 2026-10-24), and it normalizes tags.
 
 A "force replace" menu action covers changes that are invisible to the fingerprint, such as process-version rendering differences or a master edited externally.
 

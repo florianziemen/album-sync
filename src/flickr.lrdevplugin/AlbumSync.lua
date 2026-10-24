@@ -46,7 +46,13 @@ Returns true or nil, err.
 ]]
 function M.add(api, album, photoId)
 	if album.id then
-		local _, e = api:call("flickr.photosets.addPhoto", { photoset_id = album.id, photo_id = photoId }, "POST")
+		local _, e = api:call(
+			"flickr.photosets.addPhoto",
+			{ photoset_id = album.id, photo_id = photoId },
+			"POST",
+			nil,
+			{ [SET_NOT_FOUND] = true, [ALREADY_IN_SET] = true }
+		)
 		if not e or e.code == ALREADY_IN_SET then
 			return true
 		end
@@ -65,7 +71,13 @@ end
 
 --- Remove a photo from an album. Missing album, missing photo or photo-not-in-album count as success.
 function M.remove(api, albumId, photoId)
-	local _, e = api:call("flickr.photosets.removePhoto", { photoset_id = albumId, photo_id = photoId }, "POST")
+	local _, e = api:call(
+		"flickr.photosets.removePhoto",
+		{ photoset_id = albumId, photo_id = photoId },
+		"POST",
+		nil,
+		{ [SET_NOT_FOUND] = true, [NOT_IN_SET] = true, [PHOTO_NOT_FOUND] = true }
+	)
 	if not e or e.code == SET_NOT_FOUND or e.code == NOT_IN_SET or e.code == PHOTO_NOT_FOUND then
 		return true
 	end

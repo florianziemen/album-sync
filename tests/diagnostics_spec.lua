@@ -108,6 +108,22 @@ describe("FlickrApi logging", function()
 		assert.truthy(joined(lines, "error"):find("file /tmp/x.jpg", 1, true))
 	end)
 
+	it("logs expected error codes as info without a dump", function()
+		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"fail","code":1,"message":"Photoset not found"}' } })
+		local lines = capture(deps)
+		local _, e = FlickrApi.new(deps, h.CREDS, ACCESS):call(
+			"flickr.photosets.removePhoto",
+			{ photoset_id = "1", photo_id = "2" },
+			"POST",
+			nil,
+			{ [1] = true }
+		)
+		assert.equal(1, e.code)
+		assert.equal(1, #lines)
+		assert.equal("info", lines[1].level)
+		assert.truthy(lines[1].message:find("(expected)", 1, true))
+	end)
+
 	it("flags successful responses with an unexpected shape", function()
 		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"ok","person":{}}' } })
 		local lines = capture(deps)

@@ -513,7 +513,7 @@ end
 
 -- Identifies a photo in log lines (no paths).
 local function photoLabel(photo)
-	local ok, name = pcall(function()
+	local ok, name = LrTasks.pcall(function()
 		return photo:getFormattedMetadata("fileName")
 	end)
 	return string.format("%s (localId=%s)", ok and tostring(name) or "?", tostring(photo.localIdentifier))

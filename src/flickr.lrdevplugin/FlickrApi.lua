@@ -60,10 +60,11 @@ end
 
 --[[
 Send `req` with `send`, parse with `parse`, log. `check(result)` may reject a successful
-parse whose shape is unexpected; it returns an error message or nil.
+parse whose shape is unexpected; it returns an error message or nil. `expected` is a set of
+Flickr error codes the caller handles as normal outcomes (logged as info, no dump).
 Returns result or nil, err.
 ]]
-function M:exchange(label, send, req, parse, check)
+function M:exchange(label, send, req, parse, check, expected)
 	if self.deps.limiter then
 		local waited = self.deps.limiter:acquire()
 		if waited > 0 then
@@ -83,6 +84,10 @@ function M:exchange(label, send, req, parse, check)
 			result, err = nil, { class = "unexpected", message = problem }
 		end
 	end
+	if err and expected and err.code and expected[err.code] then
+		self:_log("info", Diagnostics.summary(label, req, resp, elapsed, err) .. " (expected)")
+		return nil, err
+	end
 	self:_log(err and "error" or "info", Diagnostics.summary(label, req, resp, elapsed, err))
 	if err then
 		self:_log("error", Diagnostics.exchange(label, req, resp, elapsed, err))
@@ -92,16 +97,17 @@ function M:exchange(label, send, req, parse, check)
 end
 
 --- Signed GET/POST with an explicit token, parsed with `parse` (used by the login flow).
-function M:signedExchange(label, method, url, params, token, tokenSecret, parse, check)
+function M:signedExchange(label, method, url, params, token, tokenSecret, parse, check, expected)
 	local req = { method = method, url = url, params = self:sign(method, url, params, token, tokenSecret) }
-	return self:exchange(label, self.deps.transport, req, parse, check)
+	return self:exchange(label, self.deps.transport, req, parse, check, expected)
 end
 
 --[[
 REST call. httpMethod defaults to GET; Flickr requires POST for setters.
+expected: optional set of error codes that are normal outcomes for the caller (see exchange).
 Returns decoded JSON or nil, err.
 ]]
-function M:call(method, params, httpMethod, check)
+function M:call(method, params, httpMethod, check, expected)
 	local all = { method = method, format = "json", nojsoncallback = "1" }
 	for k, v in pairs(params or {}) do
 		all[k] = v
@@ -116,7 +122,8 @@ function M:call(method, params, httpMethod, check)
 			self.access.token,
 			self.access.tokenSecret,
 			FlickrResponse.parseRest,
-			check
+			check,
+			expected
 		)
 	end
 	if not self.deps.sleep or NOT_IDEMPOTENT[method] then
@@ -258,7 +265,7 @@ end
 
 --- true if the photo exists for the caller, false if Flickr says "Photo not found", or nil, err.
 function M:photoExists(photoId)
-	local data, e = self:call("flickr.photos.getInfo", { photo_id = photoId })
+	local data, e = self:call("flickr.photos.getInfo", { photo_id = photoId }, nil, nil, { [1] = true })
 	if data then
 		return true
 	end

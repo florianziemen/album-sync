@@ -98,6 +98,19 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	local f = LrView.osFactory()
 	local props = LrBinding.makePropertyTable(context)
 	props.choice = "later"
+	-- Keyboard: type a candidate's number (or l, x, s) into the focused field, then Return.
+	local keys = { l = "later", x = "dismiss", s = "show" }
+	for n, c in ipairs(candidates) do
+		if not c.linkedTo then
+			keys[tostring(n)] = c.key
+		end
+	end
+	props:addObserver("typed", function(_, _, value)
+		local choice = keys[string.lower(string.match(value or "", "(%S)%s*$") or "")]
+		if choice then
+			props.choice = choice
+		end
+	end)
 	local flickrUrl = PhotoFields.photoUrl(nsid, item.id)
 
 	local left = {
@@ -115,7 +128,14 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 			end,
 		}),
 	}
-	local right = { spacing = f:control_spacing() }
+	local right = {
+		spacing = f:control_spacing(),
+		f:row({
+			f:static_text({ title = "Key:" }),
+			f:edit_field({ value = LrView.bind("typed"), immediate = true, width_in_chars = 3 }),
+			f:static_text({ title = "number, l = later, x = not in catalog, s = show; then Return" }),
+		}),
+	}
 	for n, c in ipairs(candidates) do
 		local label = n .. ". " .. c.name
 		local choose = c.linkedTo
@@ -137,14 +157,14 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 		right[#right + 1] = f:row({ f:catalog_photo({ photo = c.photo, width = 160, height = 160 }), f:column(info) })
 	end
 	right[#right + 1] = f:radio_button({
-		title = "Not in this catalog (remove from the list)",
+		title = "Not in this catalog (remove from the list) [x]",
 		value = LrView.bind("choice"),
 		checked_value = "dismiss",
 	})
 	right[#right + 1] =
-		f:radio_button({ title = "Decide later", value = LrView.bind("choice"), checked_value = "later" })
+		f:radio_button({ title = "Decide later [l]", value = LrView.bind("choice"), checked_value = "later" })
 	right[#right + 1] = f:radio_button({
-		title = "Stop and select the candidates in the Library",
+		title = "Stop and select the candidates in the Library [s]",
 		value = LrView.bind("choice"),
 		checked_value = "show",
 	})

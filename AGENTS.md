@@ -7,7 +7,7 @@ Lightroom Classic publish-service plugin for Flickr. MIT licensed. See `docs/DES
 - **Clean room.** Do not read, copy or adapt Adobe's SDK sample plugins (including `album-sync.lrdevplugin`) or Jeffrey Friedl's plugins or libraries. Use only the public SDK API reference and the Flickr API docs.
 - Third-party code must be MIT, BSD, Apache-2.0 or public domain. Put it in the plugin folder next to a `<file>.LICENSE` file and list it in `THIRD_PARTY.md`.
 - The plugin folder is flat (Lightroom's `require` loads from the plugin root only). Adapters (files that call `import`): `HttpTransport`, `AppDeps`, `PhotoRenderer`, `CredentialStore`, `ServiceProvider` and `*MenuItem`. Everything else is pure core with injected dependencies.
-- **Never name own modules `Lr*`.** Lightroom treats such `require` names as its own toolkit scripts and fails with "Could not load toolkit script".
+- **New `.lua` files need a Lightroom restart:** "Reload plug-in" does not pick up files added after Lightroom loaded the plugin ("Could not load toolkit script: X" / "No script by the name X"). Avoid `Lr*` module names as a precaution (the first such failure was blamed on the prefix; the real cause was probably the new file).
 - Never commit API keys, secrets, tokens or local paths. Users supply their own Flickr key and secret. Tokens live in `LrPasswords`.
 - Never log tokens, secrets or OAuth signatures.
 - Target Lua 5.1 (Lightroom Classic 13+). No `bit` or `bit32`, no `goto`.

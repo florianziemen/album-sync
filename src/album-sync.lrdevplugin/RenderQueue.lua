@@ -24,15 +24,6 @@ function M:_startUpTo(last)
 	end
 end
 
---- Number of started jobs not yet taken.
-function M:inFlight()
-	local n = 0
-	for _ in pairs(self.jobs) do
-		n = n + 1
-	end
-	return n
-end
-
 --- Take the next item. Returns item, ok, pathOrMsg; nil when exhausted.
 function M:take()
 	local i = self.nextIndex

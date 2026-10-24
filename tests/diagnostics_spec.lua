@@ -102,7 +102,7 @@ describe("FlickrApi logging", function()
 		assert.truthy(dump:find("networkError.errorCode=-1001", 1, true))
 		assert.truthy(dump:find("transport error: timedOut", 1, true))
 
-		_, e = api:upload("/tmp/x.jpg", {})
+		_, e = api:uploadAsync("/tmp/x.jpg", {})
 		assert.equal("transient", e.class)
 		assert.truthy(joined(lines, "error"):find("transport raised:", 1, true))
 		assert.truthy(joined(lines, "error"):find("file /tmp/x.jpg", 1, true))

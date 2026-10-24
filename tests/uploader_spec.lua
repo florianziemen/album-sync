@@ -157,14 +157,10 @@ describe("Uploader", function()
 
 	it("does not re-upload while Flickr is still processing", function()
 		local journal = Journal.new(memoryStorage())
-		local pending = function()
+		local api = fakeApi({ uploadAsync = { { "T1" } } })
+		api.checkTickets = function() -- still processing, however often it is asked
 			return { T1 = { complete = 0 } }
 		end
-		local checks = {}
-		for i = 1, 100 do
-			checks[i] = pending
-		end
-		local api = fakeApi({ uploadAsync = { { "T1" } }, checkTickets = checks })
 		local up = Uploader.new(deps(), api, journal)
 		local id, e = up:upload("u1", "/x.jpg", FIELDS)
 		assert.is_nil(id)

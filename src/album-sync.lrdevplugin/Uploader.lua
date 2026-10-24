@@ -14,6 +14,7 @@ Dependencies: now, sleep, log, random01 (as for FlickrApi). api: FlickrApi. jour
 
 local JpegXmp = require("JpegXmp")
 local Retry = require("Retry")
+local TicketPoller = require("TicketPoller")
 
 local M = {}
 M.__index = M
@@ -22,55 +23,17 @@ M.TICKET_TIMEOUT = 300 -- seconds to wait for Flickr to process an upload
 M.RECENT_CHECKS = 3 -- searches for a lost upload (new uploads may take a moment to show up)
 M.RECENT_SLACK = 120 -- seconds before the attempt start that still count (clock skew)
 
---- poller (optional): shared TicketPoller for all uploads of a run.
+--- poller (optional): shared TicketPoller for all uploads of a run; one per uploader otherwise.
 function M.new(deps, api, journal, poller)
 	-- claimed: photo ids already attributed to some upload of this run (never matched twice,
 	-- e.g. virtual copies share a title).
+	poller = poller or TicketPoller.new(api, deps)
 	return setmetatable({ deps = deps, api = api, journal = journal, poller = poller, claimed = {} }, M)
 end
 
 function M:_log(level, msg)
 	if self.deps.log then
 		self.deps.log(level, msg)
-	end
-end
-
---[[
-Wait for a ticket. Returns photoId, or nil, err where err.class is
-  "permanent" (Flickr could not process the file),
-  "pending"   (still processing; keep the journal entry, do not re-upload),
-  "lost"      (ticket unknown to Flickr; search recent uploads).
-]]
-function M:waitTicket(ticket)
-	local waited, interval = 0, 1
-	while true do
-		local status, e = self.api:checkTickets({ ticket })
-		local t = status and status[ticket]
-		if t then
-			if t.complete == 1 and t.photoId then
-				return t.photoId
-			elseif t.complete == 2 then
-				return nil, { class = "permanent", message = "Flickr could not process the uploaded file" }
-			elseif t.invalid then
-				return nil, { class = "lost", message = "upload ticket unknown to Flickr" }
-			end
-		elseif e and e.class ~= "transient" then
-			return nil, e
-		end
-		if waited >= M.TICKET_TIMEOUT then
-			return nil,
-				{
-					class = "pending",
-					message = string.format(
-						"Flickr is still processing the upload after %ds (ticket %s)",
-						waited,
-						ticket
-					),
-				}
-		end
-		self.deps.sleep(interval)
-		waited = waited + interval
-		interval = math.min(interval * 2, 15)
 	end
 end
 
@@ -156,12 +119,7 @@ function M:upload(key, path, fields, opts)
 		if fault then
 			return nil, fault
 		end
-		local photoId, waitErr
-		if self.poller then
-			photoId, waitErr = self.poller:wait(ticket, M.TICKET_TIMEOUT)
-		else
-			photoId, waitErr = self:waitTicket(ticket)
-		end
+		local photoId, waitErr = self.poller:wait(ticket, M.TICKET_TIMEOUT)
 		if photoId then
 			return photoId
 		end

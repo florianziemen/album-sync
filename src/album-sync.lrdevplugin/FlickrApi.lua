@@ -159,12 +159,6 @@ function M:_postFile(label, url, filePath, fields)
 	return self:exchange(label, self.deps.postMultipart, req, FlickrResponse.parseUpload)
 end
 
---- Upload a file. `fields` are Flickr upload arguments (title, tags, is_public, ...).
---- Returns the photo id or nil, err.
-function M:upload(filePath, fields)
-	return self:_postFile("upload", UPLOAD_URL, filePath, fields)
-end
-
 --- Async upload: returns a ticket id (poll with checkTickets) or nil, err.
 function M:uploadAsync(filePath, fields)
 	local missing = self:_missingFile("upload(async)", filePath)
@@ -303,11 +297,6 @@ function M:pushMetadata(photoId, fields, which)
 		end
 	end
 	return true
-end
-
---- Title, description and tags (for callers that push everything).
-function M:setMetadata(photoId, fields)
-	return self:pushMetadata(photoId, fields, { title = true, description = true, tags = true })
 end
 
 --- Visibility (Privacy value). Returns true or nil, err.

@@ -106,13 +106,4 @@ function M.saveAccount(nsid, username, perms, token, tokenSecret)
 	p.accounts = accounts -- reassign so LrPrefs persists the change
 end
 
-function M.removeAccount(nsid)
-	put("account." .. nsid .. ".token", nil)
-	put("account." .. nsid .. ".tokenSecret", nil)
-	local p = prefs()
-	local accounts = p.accounts or {}
-	accounts[nsid] = nil
-	p.accounts = accounts
-end
-
 return M

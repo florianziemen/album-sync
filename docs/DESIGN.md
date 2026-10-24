@@ -56,21 +56,29 @@ The plugin folder is flat, because Lightroom's `require` loads modules from the 
 
 ```
 src/album-sync.lrdevplugin/
-  Info.lua                  plugin manifest
-  Sha1.lua, Base64.lua      hashing / encoding                   (core, done)
-  OAuth.lua                 OAuth 1.0a signing                   (core, done)
-  FlickrResponse.lua        response parsing, error classes      (core, done)
-  FlickrAuth.lua            oob login flow                       (core, done)
-  HttpTransport.lua         LrHttp → transport interface         (adapter, done)
-  CredentialStore.lua       key/secret/tokens in LrPasswords     (adapter, done)
-  LoginMenuItem.lua         login prototype UI                   (adapter, done)
-  ServiceProvider.lua       publish hooks (thin, delegates)
-  MetadataDefinition.lua    plugin fields (flickrId, fingerprints, state)
-  Retry.lua, Journal.lua, Fingerprint.lua, Matcher.lua, Albums.lua
-  json.lua                  vendored rxi/json.lua (MIT)
-tests/                      busted specs
-tools/request_token.lua     CLI check of OAuth signing against live Flickr
-tools/flickr_mock/          Python fake Flickr server for error-path tests (planned)
+  Info.lua, PluginInfo.lua    manifest, Plug-in Manager section
+  MetadataDefinition.lua      plugin fields (flickrId, state, privacy, fingerprints, sync state)
+  ServiceProvider.lua         publish hooks: planning, render queue, upload workers, albums, sync
+  *MenuItem.lua               log in, link existing albums, review, check deleted, forget link
+  -- adapters (Lightroom SDK)
+  AppDeps.lua                 dependencies for core modules (HTTP, time, log, tasks)
+  HttpTransport.lua           LrHttp: requests, multipart upload, remote file size
+  CredentialStore.lua         API key and per-account tokens (LrPasswords), account list (LrPrefs)
+  CatalogState.lua            plugin fields, catalog queries, linking, repair
+  PhotoRenderer.lua           just-in-time rendering, upload marker
+  JsonFile.lua                JSON files in Lightroom's app-support folder
+  Linker.lua, UiText.lua      linking helper, wrapped dialog text
+  -- core (pure Lua, unit-tested)
+  Sha1, Base64, OAuth         signing
+  FlickrApi, FlickrAuth, FlickrResponse, Diagnostics, Retry, RateLimiter
+  Uploader, TicketPoller, Journal, TaskPool, RenderQueue
+  PublishPlanner, Fingerprint, PhotoFields, Privacy, RemoteState, AlbumSync, JpegXmp
+  FlickrIndex, Matcher, ImportPlan, ReviewQueue, DuplicateCheck, RemoteCheck
+  json.lua                    vendored rxi/json.lua (MIT)
+tests/                        busted specs
+tools/package.sh              release zip
+tools/request_token.lua       CLI check of OAuth signing against live Flickr
+assets/logo.svg               logo (README, source of the Publish Services icon)
 ```
 
 ## 5. Upload pipeline
@@ -355,4 +363,4 @@ Throttle all API calls to at most 1 per second, which stays below 3600 per hour 
 - Lua 5.1 compatible code.
 - busted tests with LR mocks, run on demand and in GitHub Actions.
 - luacheck and StyLua via pre-commit.
-- Python fake Flickr server (`tools/flickr_mock`) for end-to-end error paths, checked with ruff.
+- Error paths are tested with the debug-mode fault injection (§5a) instead of a fake server.

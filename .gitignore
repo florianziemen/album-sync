@@ -4,7 +4,6 @@
 key
 secret
 *.out
-/*.txt
 dist/
 *.txt
 /*.png

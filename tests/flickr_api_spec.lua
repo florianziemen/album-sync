@@ -39,10 +39,10 @@ describe("FlickrApi", function()
 	it("uploads with signed fields and the file outside the signature", function()
 		local deps = h.fakeDeps(
 			{},
-			{ { status = 200, body = '<?xml version="1.0"?>\n<rsp stat="ok">\n<photoid>12345</photoid>\n</rsp>' } }
+			{ { status = 200, body = '<?xml version="1.0"?>\n<rsp stat="ok">\n<ticketid>T-1</ticketid>\n</rsp>' } }
 		)
-		local id = FlickrApi.new(deps, h.CREDS, ACCESS):upload("/tmp/x.jpg", { title = "t", tags = "a:b=c" })
-		assert.equal("12345", id)
+		local ticket = FlickrApi.new(deps, h.CREDS, ACCESS):uploadAsync("/tmp/x.jpg", { title = "t", tags = "a:b=c" })
+		assert.equal("T-1", ticket)
 		local up = deps.uploads[1]
 		assert.equal("https://up.flickr.com/services/upload/", up.url)
 		assert.equal("/tmp/x.jpg", up.filePath)
@@ -68,8 +68,11 @@ describe("FlickrApi", function()
 
 	it("pushes metadata with setMeta then setTags", function()
 		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"ok"}' }, { status = 200, body = '{"stat":"ok"}' } })
-		local ok = FlickrApi.new(deps, h.CREDS, ACCESS)
-			:setMetadata("42", { title = "T", description = "D", tags = '"New York" cat' })
+		local ok = FlickrApi.new(deps, h.CREDS, ACCESS):pushMetadata(
+			"42",
+			{ title = "T", description = "D", tags = '"New York" cat' },
+			{ title = true, tags = true }
+		)
 		assert.is_true(ok)
 		assert.equal("flickr.photos.setMeta", deps.calls[1].params.method)
 		assert.equal("T", deps.calls[1].params.title)
@@ -81,7 +84,7 @@ describe("FlickrApi", function()
 	it("stops after a failing setMeta", function()
 		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"fail","code":1,"message":"Photo not found"}' } })
 		local ok, e = FlickrApi.new(deps, h.CREDS, ACCESS)
-			:setMetadata("42", { title = "T", description = "", tags = "" })
+			:pushMetadata("42", { title = "T", description = "", tags = "" })
 		assert.is_nil(ok)
 		assert.equal(1, e.code)
 		assert.equal(1, #deps.calls)
@@ -158,12 +161,12 @@ describe("FlickrApi", function()
 			{ status = 502, body = "" },
 		})
 		local api = FlickrApi.new(deps, h.CREDS, ACCESS)
-		local _, e = api:upload("/tmp/x.jpg", {})
+		local _, e = api:uploadAsync("/tmp/x.jpg", {})
 		assert.equal("throttle", e.class)
 		assert.equal(120, e.waitSeconds)
-		_, e = api:upload("/tmp/x.jpg", {})
+		_, e = api:uploadAsync("/tmp/x.jpg", {})
 		assert.equal("account", e.class)
-		_, e = api:upload("/tmp/x.jpg", {})
+		_, e = api:uploadAsync("/tmp/x.jpg", {})
 		assert.equal("transient", e.class)
 	end)
 end)

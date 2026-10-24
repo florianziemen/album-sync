@@ -56,6 +56,14 @@ local function askCredentials(context, stored)
 					},
 				}),
 			}),
+			UiText.wrapped(
+				f,
+				"“Delete” is only needed without Flickr Pro: when an image changed, Flickr cannot replace the "
+					.. "file, and “Re-upload, delete the old photo” removes the outdated copy (its comments, faves "
+					.. "and links are lost; albums carry over). Use it to avoid duplicates, to stay under the free "
+					.. "1,000-photo limit, or when the old version must not stay online. With Pro, images are "
+					.. "replaced in place and “write” is enough."
+			),
 			UiText.wrapped(f, "Log in to the account you want in the browser (use a private window if needed)."),
 		}),
 	})

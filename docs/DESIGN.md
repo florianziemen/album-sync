@@ -216,6 +216,13 @@ Throttle all API calls to at most 1 per second, which stays below 3600 per hour 
    - A pre-pass over `exportSession:renditions()` does **not** start rendering. `skipRender()` in it works: `wasSkipped=true`, no file is written, and `recordPublishedPhotoId` still moves the photo to "Published". → Metadata-only republish needs no render (verified on Flickr).
    - Synchronous upload of about 2.7 MB took about 2.3 s per photo.
 
+   **Results for own rendering, 5.2(b), 2026-10-24:**
+   - Settings come from `propertyTable["< contents >"]` (58 `LR_*` keys). `pairs(propertyTable)` yields nothing.
+   - Nested single-photo `LrExportSession` with `doExportOnNewTask()` works inside `processRenderedPhotos`. With ahead=2, at most 3 files are on disk and 2 renders are in flight.
+   - Cost is about 0.35 s per photo for about 2.7 MB JPEGs (LR batch: about 0.2 s). Full-size renders are not measured yet.
+   - Published photos (metadata only) and new photos (own render) mix correctly in one run.
+   - `deletePhotosFromPublishedCollection` runs after `processRenderedPhotos` for photos in "Deleted Photos to Remove". Without a stored per-photo Flickr ID, re-adding such a photo would upload a duplicate. → The plugin field `flickrId` (§3) is required before real use.
+
    **Account lock** (done): every publish verifies via `flickr.test.login` that the token belongs to the service's locked NSID.
 4. Whether `LrHttp.postMultipart` streams large files (>100 MB) or loads them into memory.
 5. Async upload: ticket lifetime, and search-index lag for machine-tag lookup.

@@ -146,13 +146,13 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), "lrflickr-review")
 	LrFileUtils.createAllDirectories(dir)
 
-	local linked, dismissed, auto = 0, 0, 0
+	local linkedCount, dismissed, auto = 0, 0, 0
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
 		local where = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
 		linked[key] = item.id -- never offer this photo again in this session
 		queue:remove(item.id)
-		linked = linked + 1
+		linkedCount = linkedCount + 1
 		log:info(string.format("review: linked flickr=%s to %s (%s) in %s", item.id, key, how, where))
 	end
 
@@ -211,7 +211,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 		"Flickr: review",
 		string.format(
 			"Linked %d photo(s) (%d automatically by EXIF), removed %d. %d left for later.",
-			linked,
+			linkedCount,
 			auto,
 			dismissed,
 			#queue:items()

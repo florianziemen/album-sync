@@ -224,7 +224,7 @@ Throttle all API calls to at most 1 per second, which stays below 3600 per hour 
    **Results for own rendering, 5.2(b), 2026-10-24:**
    - Settings come from `propertyTable["< contents >"]` (58 `LR_*` keys). `pairs(propertyTable)` yields nothing.
    - Nested single-photo `LrExportSession` with `doExportOnNewTask()` works inside `processRenderedPhotos`. With ahead=2, at most 3 files are on disk and 2 renders are in flight.
-   - Cost is about 0.35 s per photo for about 2.7 MB JPEGs (LR batch: about 0.2 s). Full-size renders are not measured yet.
+   - Cost is about 0.35 s per photo for about 2.7 MB JPEGs (LR batch: about 0.2 s). Full size at q90 (about 10–11 MB each): 12 photos in 4.7 s, about 0.4 s per photo, peak 33.7 MB on disk. The waits come in about 1 s steps for every third photo, so look-ahead renders run in parallel (the steps may be LR's polling interval). Rendering is far faster than upload (10 MB takes about 4 s at 20 Mbit/s), so ahead=2 is sufficient.
    - Published photos (metadata only) and new photos (own render) mix correctly in one run.
    - `deletePhotosFromPublishedCollection` runs after `processRenderedPhotos` for photos in "Deleted Photos to Remove". Without a stored per-photo Flickr ID, re-adding such a photo would upload a duplicate. → The plugin field `flickrId` (§3) is required before real use.
 

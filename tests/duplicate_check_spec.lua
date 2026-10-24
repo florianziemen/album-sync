@@ -69,3 +69,45 @@ describe("FlickrApi.originalSize", function()
 		assert.truthy(e.message:find("no original", 1, true))
 	end)
 end)
+
+describe("DuplicateCheck.sameContent", function()
+	local function file(s)
+		local pos = 1
+		return {
+			read = function(_, n)
+				if pos > #s then
+					return nil
+				end
+				local chunk = s:sub(pos, pos + n - 1)
+				pos = pos + n
+				return chunk
+			end,
+		}
+	end
+
+	it("compares contents", function()
+		assert.is_true(DuplicateCheck.sameContent(file("abc"), file("abc")))
+		assert.is_false(DuplicateCheck.sameContent(file("abc"), file("abd")))
+		assert.is_false(DuplicateCheck.sameContent(file("abc"), file("ab")))
+	end)
+end)
+
+describe("DuplicateCheck.describe", function()
+	it("names virtual copies, shared originals and duplicate imports", function()
+		local infos = {
+			{ path = "/a.nef", size = 10 },
+			{ path = "/a.nef", size = 10, virtual = true, copyName = "Copy 1" },
+			{ path = "/b.nef", size = 10 },
+			{ path = "/c.nef", size = 11 },
+		}
+		local asked = {}
+		local notes = DuplicateCheck.describe(infos, function(i, j)
+			asked[#asked + 1] = i .. "-" .. j
+			return true
+		end)
+		assert.equal("same original file as 2; identical file to 3 (imported twice)", notes[1])
+		assert.equal('virtual copy "Copy 1"; same original file as 1; identical file to 3 (imported twice)', notes[2])
+		assert.equal("", notes[4])
+		assert.same({ "1-3", "2-3", "3-1", "3-2" }, asked)
+	end)
+end)

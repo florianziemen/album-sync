@@ -88,4 +88,43 @@ function M.groups(items, linked)
 	return out
 end
 
+-- True when two open files (anything with :read(n)) have the same content.
+function M.sameContent(a, b)
+	while true do
+		local x, y = a:read(1048576), b:read(1048576)
+		if x ~= y then
+			return false
+		elseif x == nil then
+			return true
+		end
+	end
+end
+
+--[[
+Explains how candidate catalog photos relate, so the review can tell copies apart.
+infos: array of { path, size, virtual (bool), copyName }. sameFile(i, j): compares the contents
+of infos[i] and infos[j] (only asked for different paths of equal size). Returns an array of
+notes (strings, "" when nothing to say), one per candidate; candidates are numbered from 1.
+]]
+function M.describe(infos, sameFile)
+	local notes = {}
+	for i, info in ipairs(infos) do
+		local parts = {}
+		if info.virtual then
+			parts[#parts + 1] = "virtual copy" .. (info.copyName and (' "' .. info.copyName .. '"') or "")
+		end
+		for j, other in ipairs(infos) do
+			if j ~= i and info.path and info.path == other.path then
+				parts[#parts + 1] = "same original file as " .. j
+			elseif j ~= i and info.path and other.path and info.size and info.size == other.size then
+				if sameFile(i, j) then
+					parts[#parts + 1] = "identical file to " .. j .. " (imported twice)"
+				end
+			end
+		end
+		notes[i] = table.concat(parts, "; ")
+	end
+	return notes
+end
+
 return M

@@ -3,10 +3,12 @@ File > Plug-in Extras > "Album Sync: Review unclear matches…"
 
 Works through the review queue of this catalog (read-only on Flickr). Each item first gets
 an EXIF tie-break; otherwise a dialog shows the Flickr photo next to the candidate catalog
-photos: link one, mark "not in this catalog" (removed from the queue), or decide later.
+photos (with notes on virtual copies and identical files): link one, mark "not in this
+catalog" (removed from the queue), decide later, or stop and show the candidates in the Library.
 Linked photos go into the collections of the photo's albums, else into "Photostream".
 ]]
 
+local LrApplication = import("LrApplication")
 local LrBinding = import("LrBinding")
 local LrDialogs = import("LrDialogs")
 local LrFileUtils = import("LrFileUtils")
@@ -15,6 +17,7 @@ local LrHttp = import("LrHttp")
 local LrLogger = import("LrLogger")
 local LrPathUtils = import("LrPathUtils")
 local LrProgressScope = import("LrProgressScope")
+local LrShell = import("LrShell")
 local LrView = import("LrView")
 
 local AccountGuard = require("AccountGuard")
@@ -39,6 +42,35 @@ log:enable("logfile")
 local function fatal(message)
 	log:error("review: " .. message)
 	LrDialogs.message("Album Sync: review unclear matches", message, "critical")
+end
+
+-- Notes on how the candidates relate (virtual copies, shared or identical original files).
+local function candidateNotes(candidates)
+	local infos = {}
+	for i, c in ipairs(candidates) do
+		infos[i] = {
+			path = c.photo:getRawMetadata("path"),
+			size = c.photo:getRawMetadata("fileSize"),
+			virtual = c.photo:getRawMetadata("isVirtualCopy"),
+			copyName = c.photo:getFormattedMetadata("copyName"),
+		}
+		c.path = infos[i].path
+	end
+	local cache = {}
+	return DuplicateCheck.describe(infos, function(i, j)
+		local key = math.min(i, j) .. "-" .. math.max(i, j)
+		if cache[key] == nil then
+			local a, b = io.open(infos[i].path, "rb"), io.open(infos[j].path, "rb")
+			cache[key] = a and b and DuplicateCheck.sameContent(a, b) or false
+			if a then
+				a:close()
+			end
+			if b then
+				b:close()
+			end
+		end
+		return cache[key]
+	end)
 end
 
 -- Download a small preview of the Flickr photo into `dir`; returns the file path or nil.
@@ -84,14 +116,25 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 		}),
 	}
 	local right = { spacing = f:control_spacing() }
-	for _, c in ipairs(candidates) do
+	for n, c in ipairs(candidates) do
+		local label = n .. ". " .. c.name
 		local choose = c.linkedTo
-				and UiText.wrapped(f, c.name .. " (already linked to Flickr photo " .. c.linkedTo .. ")", 40)
-			or f:radio_button({ title = "This one: " .. c.name, value = LrView.bind("choice"), checked_value = c.key })
-		right[#right + 1] = f:row({
-			f:catalog_photo({ photo = c.photo, width = 160, height = 160 }),
-			f:column({ choose, f:static_text({ title = "Taken: " .. tostring(c.taken) }) }),
-		})
+				and UiText.wrapped(f, label .. " (already linked to Flickr photo " .. c.linkedTo .. ")", 40)
+			or f:radio_button({ title = label, value = LrView.bind("choice"), checked_value = c.key })
+		local info = { choose, f:static_text({ title = "Taken: " .. tostring(c.taken) }) }
+		if c.note ~= "" then
+			info[#info + 1] = UiText.wrapped(f, c.note, 40)
+		end
+		if c.path then
+			info[#info + 1] = UiText.wrapped(f, c.path, 40)
+			info[#info + 1] = f:push_button({
+				title = "Show in Finder",
+				action = function()
+					LrShell.revealInShell(c.path)
+				end,
+			})
+		end
+		right[#right + 1] = f:row({ f:catalog_photo({ photo = c.photo, width = 160, height = 160 }), f:column(info) })
 	end
 	right[#right + 1] = f:radio_button({
 		title = "Not in this catalog (remove from the list)",
@@ -100,6 +143,11 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	})
 	right[#right + 1] =
 		f:radio_button({ title = "Decide later", value = LrView.bind("choice"), checked_value = "later" })
+	right[#right + 1] = f:radio_button({
+		title = "Stop and select the candidates in the Library",
+		value = LrView.bind("choice"),
+		checked_value = "show",
+	})
 
 	local result = LrDialogs.presentModalDialog({
 		title = string.format("Album Sync: unclear match %d of %d", index, total),
@@ -314,8 +362,21 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 					auto = auto + 1
 				end
 			else
+				for n, note in ipairs(candidateNotes(candidates)) do
+					candidates[n].note = note
+				end
 				local choice = ask(context, item, i, #items, candidates, preview(api, item.id, dir), nsid)
 				if choice == nil then
+					break
+				elseif choice == "show" then
+					local catalog = LrApplication.activeCatalog()
+					local photos = {}
+					for n, c in ipairs(candidates) do
+						photos[n] = c.photo
+					end
+					catalog:setActiveSources({ catalog.kAllPhotos })
+					catalog:setSelectedPhotos(photos[1], photos)
+					log:info("review: showing the candidates of flickr=" .. item.id .. " in the Library")
 					break
 				elseif choice == "dismiss" then
 					queue:remove(item.id)

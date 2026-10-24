@@ -10,6 +10,8 @@ return {
 	},
 
 	LrMetadataProvider = "MetadataDefinition.lua",
+	LrPluginInfoProvider = "PluginInfo.lua",
+	LrPluginInfoUrl = "https://github.com/florianziemen/album-sync",
 
 	LrExportMenuItems = {
 		{ title = "Flickr: Log in", file = "LoginMenuItem.lua" },

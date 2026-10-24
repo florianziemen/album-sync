@@ -22,6 +22,8 @@ Lightroom Classic publish-service plugin for Flickr. MIT licensed. See `docs/DES
 - Lint and format: luacheck and StyLua (tabs, width 120), run via pre-commit (`pre-commit install`). ruff for Python tools.
 - Tests: busted (`tests/`; config in `.busted`), run on demand and in GitHub Actions on Lua 5.1. Locally: `busted` with a Lua 5.1/LuaJIT rocks tree.
 - Live OAuth check without Lightroom: `FLICKR_KEY=… FLICKR_SECRET=… luajit tools/request_token.lua`.
+- Package: `tools/package.sh` builds `dist/album-sync-<version>.zip` (`album-sync.lrplugin`). CI uploads it as an artifact. Bump `VERSION` in `Info.lua` for releases.
+- **Never change `LrToolkitIdentifier`** (`io.github.florianziemen.album-sync`): Lightroom keys plugin metadata and publish services by it.
 - Install in Lightroom: File > Plug-in Manager > Add > `src/album-sync.lrdevplugin`. Log: `album-sync.log` in Lightroom's logs folder.
 - Commits: conventional commit titles (`feat:`, `fix:`, `docs:`, `refactor:`).
 

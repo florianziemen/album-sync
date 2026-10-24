@@ -75,6 +75,7 @@ local provider = {
 	exportPresetFields = {
 		{ key = "lockedNsid", default = "" },
 		{ key = "lockedUsername", default = "" },
+		{ key = "debugMode", default = false },
 		{ key = "dryRun", default = false },
 		{ key = "parallelUploads", default = 3 },
 		{ key = "privacy", default = "private" },
@@ -320,14 +321,19 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			}),
 		},
 		{
-			title = "Development",
+			title = "Debugging",
 			f:row({
+				f:checkbox({ title = "Debug mode (shows options for testing)", value = bind("debugMode") }),
+			}),
+			f:row({
+				visible = bind("debugMode"),
 				f:checkbox({
 					title = "Dry run: plan and render, but make no changes on Flickr or in the catalog",
 					value = bind("dryRun"),
 				}),
 			}),
 			f:row({
+				visible = bind("debugMode"),
 				f:static_text({ title = "Inject fault:", width = 110 }),
 				f:popup_menu({
 					value = bind("faultMode"),
@@ -865,7 +871,10 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local session = exportContext.exportSession
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
-	local dryRun = settings.dryRun == true
+	-- Testing options only take effect in debug mode (they stay set but hidden otherwise).
+	local debugMode = settings.debugMode == true
+	local dryRun = debugMode and settings.dryRun == true
+	local faultMode = debugMode and settings.faultMode or "none"
 	local user, api, creds = connect(settings, dryRun and "read" or "write", deps)
 
 	local journal = Journal.new(JsonFile.storage("journal-" .. JsonFile.catalogKey() .. ".json"))
@@ -915,7 +924,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		n = #entries,
 		dryRun = dryRun,
 		parallel = parallel,
-		fault = settings.faultMode,
+		fault = faultMode,
 		upload = counts.upload,
 		relink = counts.relink,
 		replace = counts.replace,
@@ -939,7 +948,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		user = user,
 		session = session,
 		album = album,
-		faults = (not dryRun) and faultInjector(settings.faultMode) or nil,
+		faults = (not dryRun) and faultInjector(faultMode) or nil,
 		publishedCollection = exportContext.publishedCollection,
 		hideFromSearch = settings.hideFromSearch ~= false,
 	}

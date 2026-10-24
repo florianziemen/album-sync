@@ -554,7 +554,22 @@ local function execute(ctx, entry, path)
 			ctx.markerChecked = true
 			local exif = api:exif(remoteId)
 			local found = JpegXmp.fromExif(exif)
-			event("markerCheck", { id = remoteId, uuid = found.uuid, copy = found.copy, ok = found.uuid == entry.uuid })
+			local spaces, seen = {}, {}
+			for key in pairs(exif or {}) do
+				local space = key:match("^([^:]+):")
+				if space and not seen[space] then
+					seen[space] = true
+					spaces[#spaces + 1] = space
+				end
+			end
+			table.sort(spaces)
+			event("markerCheck", {
+				id = remoteId,
+				uuid = found.uuid,
+				copy = found.copy,
+				ok = found.uuid == entry.uuid,
+				namespaces = table.concat(spaces, ","),
+			})
 		end
 		if remoteId and entry.fields.latitude then
 			local _, geoErr = api:setLocation(remoteId, entry.fields.latitude, entry.fields.longitude)

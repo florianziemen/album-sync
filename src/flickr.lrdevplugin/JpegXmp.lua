@@ -1,16 +1,18 @@
 --[[
-Adds identification properties to the XMP packet of a JPEG (docs/DESIGN.md §6c):
-lrflickr:uuid (Lightroom photo uuid) and lrflickr:copy (virtual copy name, "" for masters).
+Adds an identification marker to the XMP packet of a JPEG (docs/DESIGN.md §6c):
+dc:identifier = "lrflickr:uuid=<Lightroom photo uuid>;copy=<virtual copy name>".
+Flickr's getExif only returns XMP namespaces it knows (a custom namespace was dropped,
+2026-10-24), so the marker uses Dublin Core, which Flickr returns and Lightroom leaves empty.
 Pure string manipulation of the JPEG container: image data is not touched.
 
-The first <rdf:Description> of the existing XMP APP1 segment gets the attributes (replacing
-earlier ones); a JPEG without XMP gets a minimal packet after its APPn segments.
+The first <rdf:Description> of the existing XMP APP1 segment gets the attribute (replacing an
+earlier marker); a JPEG without XMP gets a minimal packet after its APPn segments.
 ]]
 
 local M = {}
 
-M.NS = "http://lrflickr.invalid/ns/1.0/"
-M.PREFIX = "lrflickr"
+M.DC = "http://purl.org/dc/elements/1.1/"
+M.TAG = "lrflickr:"
 
 local XMP_ID = "http://ns.adobe.com/xap/1.0/\0"
 local MAX_PAYLOAD = 65533 -- segment length field covers itself (2 bytes) + payload
@@ -28,36 +30,49 @@ local function escape(v)
 	return (tostring(v or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub('"', "&quot;"))
 end
 
-local function attributes(props)
-	return string.format(
-		' xmlns:%s="%s" %s:uuid="%s" %s:copy="%s"',
-		M.PREFIX,
-		M.NS,
-		M.PREFIX,
-		escape(props.uuid),
-		M.PREFIX,
-		escape(props.copy)
-	)
+--- Marker value for props { uuid, copy }.
+function M.value(props)
+	return string.format("%suuid=%s;copy=%s", M.TAG, tostring(props.uuid or ""), tostring(props.copy or ""))
 end
 
---- Add/replace our attributes in an XMP packet string. Returns the new packet or nil, err.
+--- Parse a marker value; nil if the string is not one.
+function M.parse(value)
+	if type(value) ~= "string" then
+		return nil
+	end
+	local uuid, copy = value:match("^%s*" .. M.TAG .. "uuid=([^;]*);copy=(.*)$")
+	if not uuid then
+		return nil
+	end
+	copy = copy:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&quot;", '"')
+	return { uuid = uuid ~= "" and uuid or nil, copy = copy }
+end
+
+--- Add/replace the marker attribute in an XMP packet string. Returns the new packet or nil, err.
 function M.patchPacket(packet, props)
-	-- Drop attributes from an earlier run (re-upload of the same file).
-	packet = packet:gsub("%s+xmlns:" .. M.PREFIX .. '="[^"]*"', "")
-	packet = packet:gsub("%s+" .. M.PREFIX .. ':%w+="[^"]*"', "")
+	-- Drop a marker from an earlier run (re-upload of the same file).
+	packet = packet:gsub('%s+dc:identifier="' .. M.TAG .. '[^"]*"', "")
 	local s, e = packet:find("<rdf:Description", 1, true)
 	if not s then
 		return nil, "no rdf:Description in XMP packet"
 	end
-	return packet:sub(1, e) .. attributes(props) .. packet:sub(e + 1)
+	local tagEnd = packet:find(">", e, true)
+	local startTag = packet:sub(s, tagEnd or #packet)
+	local attrs = ' dc:identifier="' .. escape(M.value(props)) .. '"'
+	if not startTag:find("xmlns:dc=", 1, true) then
+		attrs = ' xmlns:dc="' .. M.DC .. '"' .. attrs
+	end
+	return packet:sub(1, e) .. attrs .. packet:sub(e + 1)
 end
 
 function M.newPacket(props)
 	return '<?xpacket begin="\239\187\191" id="W5M0MpCehiHzreSzNTczkc9d"?>'
 		.. '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
-		.. '<rdf:Description rdf:about=""'
-		.. attributes(props)
-		.. "/></rdf:RDF></x:xmpmeta>"
+		.. '<rdf:Description rdf:about="" xmlns:dc="'
+		.. M.DC
+		.. '" dc:identifier="'
+		.. escape(M.value(props))
+		.. '"/></rdf:RDF></x:xmpmeta>'
 		.. '<?xpacket end="w"?>'
 end
 
@@ -106,23 +121,17 @@ function M.apply(jpeg, props)
 end
 
 --[[
-Read our properties back from Flickr's EXIF (FlickrApi:exif result, keyed by tag and by
-"tagspace:tag"). Flickr names unknown XMP namespaces by prefix; match case-insensitively.
-Returns { uuid, copy } (fields nil when absent).
+Read the marker back from Flickr's EXIF (FlickrApi:exif result): any tag whose value is a
+marker (normally XMP-dc:Identifier). Returns { uuid, copy } (fields nil when absent).
 ]]
 function M.fromExif(exif)
-	local out = {}
-	for key, value in pairs(exif or {}) do
-		local k = key:lower()
-		if k:find(M.PREFIX, 1, true) or k:find("xmp%-" .. M.PREFIX) then
-			if k:find("uuid$") then
-				out.uuid = value
-			elseif k:find("copy$") then
-				out.copy = value
-			end
+	for _, value in pairs(exif or {}) do
+		local m = M.parse(value)
+		if m then
+			return m
 		end
 	end
-	return out
+	return {}
 end
 
 return M

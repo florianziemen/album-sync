@@ -149,16 +149,15 @@ describe("Matcher marker", function()
 	}
 
 	it("prefers the uuid marker", function()
-		local key, how = Matcher.resolveByExif({ ["XMP-lrflickr:Uuid"] = "V2" }, cands)
+		local key, how = Matcher.resolveByExif({ ["XMP-dc:Identifier"] = "lrflickr:uuid=V2;copy=B&W" }, cands)
 		assert.equal("V2", key)
 		assert.equal("marker:uuid", how)
 	end)
 
 	it("falls back to the copy name (other catalog)", function()
-		local key, how =
-			Matcher.resolveByExif({ ["XMP-lrflickr:Uuid"] = "elsewhere", ["XMP-lrflickr:Copy"] = "B&W" }, cands)
+		local key, how = Matcher.resolveByExif({ ["XMP-dc:Identifier"] = "lrflickr:uuid=elsewhere;copy=B&W" }, cands)
 		assert.equal("V2", key)
 		assert.equal("marker:copy", how)
-		assert.equal("M", (Matcher.resolveByExif({ ["XMP-lrflickr:Copy"] = "" }, cands)))
+		assert.equal("M", (Matcher.resolveByExif({ ["XMP-dc:Identifier"] = "lrflickr:uuid=x;copy=" }, cands)))
 	end)
 end)

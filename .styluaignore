@@ -1,2 +1,4 @@
 src/album-sync.lrdevplugin/json.lua
 .rocks/
+.luarocks/
+.lua/

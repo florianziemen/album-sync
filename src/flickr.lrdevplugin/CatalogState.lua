@@ -223,9 +223,11 @@ Returns records (key = uuid), photoByKey, linked ({ [uuid] = flickrId }).
 function M.matcherRecords()
 	local catalog = LrApplication.activeCatalog()
 	local photos = catalog:getAllPhotos()
-	local raw =
-		catalog:batchGetRawMetadata(photos, { "uuid", "dateTimeOriginalISO8601", "croppedDimensions", "isVideo" })
-	local fmt = catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName" })
+	local raw = catalog:batchGetRawMetadata(
+		photos,
+		{ "uuid", "dateTimeOriginal", "dateTimeOriginalISO8601", "croppedDimensions", "isVideo" }
+	)
+	local fmt = catalog:batchGetFormattedMetadata(photos, { "fileName", "preservedFileName", "cameraSerialNumber" })
 	local plugin = catalog:batchGetPropertyForPlugin(photos, _PLUGIN, { "flickrId" })
 	local records, byKey, linked = {}, {}, {}
 	for _, photo in ipairs(photos) do
@@ -240,9 +242,21 @@ function M.matcherRecords()
 			if f.preservedFileName and f.preservedFileName ~= "" then
 				names[#names + 1] = f.preservedFileName
 			end
+			-- Sub-second: from the ISO string if present, else the fraction of the raw time.
+			local subsec
+			local iso = r.dateTimeOriginalISO8601
+			local digits = type(iso) == "string" and iso:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d%.(%d+)")
+			if digits then
+				subsec = tonumber(digits) / 10 ^ #digits
+			elseif type(r.dateTimeOriginal) == "number" and r.dateTimeOriginal % 1 ~= 0 then
+				subsec = r.dateTimeOriginal % 1
+			end
 			records[#records + 1] = {
 				key = r.uuid,
 				taken = taken,
+				subsec = subsec,
+				serial = (f.cameraSerialNumber and f.cameraSerialNumber ~= "") and f.cameraSerialNumber or nil,
+				iso = iso,
 				names = names,
 				aspect = (dims and dims.width and dims.height and dims.height > 0) and dims.width / dims.height or nil,
 			}

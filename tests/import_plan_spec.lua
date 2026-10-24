@@ -58,3 +58,26 @@ describe("ImportPlan", function()
 		assert.is_nil(ImportPlan.wallClock(nil))
 	end)
 end)
+
+describe("ImportPlan.promote", function()
+	it("moves a resolved review item into its albums or the photostream", function()
+		local catalog = {
+			{ key = "u1", taken = "2019-03-01 10:00:00", names = { "a.CR3" }, aspect = 1.5 },
+			{ key = "u2", taken = "2019-03-01 10:00:00", names = { "b.CR3" }, aspect = 1.5 },
+		}
+		local function ph(id)
+			return { id = id, title = "renamed", taken = "2019-03-01 10:00:00", w = 6000, h = 4000 }
+		end
+		local albums = { { id = "A", title = "Album", photos = { ph("1") } } }
+		local plan = ImportPlan.build(albums, { ph("1"), ph("2") }, catalog, RANGE, {})
+		assert.equal(2, #plan.review)
+		ImportPlan.promote(plan, "1", "u1", "exif:filename")
+		ImportPlan.promote(plan, "2", "u2", "user")
+		assert.same({ { id = "1", key = "u1", how = "exif:filename" } }, plan.albums[1].matches)
+		assert.same({}, plan.albums[1].review)
+		assert.same({ { id = "2", key = "u2", how = "user" } }, plan.photostream.matches)
+		assert.same({}, plan.review)
+		assert.equal(2, plan.stats.matched)
+		assert.equal(0, plan.stats.review)
+	end)
+end)

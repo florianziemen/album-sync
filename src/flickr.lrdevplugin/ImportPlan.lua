@@ -73,6 +73,10 @@ function M.build(albums, photostream, catalog, range, linked)
 	for _, item in ipairs(review) do
 		local albumsOfPhoto = albumOf[item.id]
 		item.album = albumsOfPhoto and albumsOfPhoto[1].title or nil
+		item.albumIds = {}
+		for _, a in ipairs(albumsOfPhoto or {}) do
+			item.albumIds[#item.albumIds + 1] = a.id
+		end
 		reviewById[item.id] = item
 	end
 
@@ -103,6 +107,7 @@ function M.build(albums, photostream, catalog, range, linked)
 	for _ in pairs(matches) do
 		matched = matched + 1
 	end
+	result.albumOf = albumOf
 	result.stats = {
 		albumsTotal = #albums,
 		albumsInRange = #inRangeAlbums,
@@ -112,6 +117,38 @@ function M.build(albums, photostream, catalog, range, linked)
 		notInCatalog = #r.notInCatalog,
 	}
 	return result
+end
+
+--[[
+Move a review item into the matches (after an EXIF tie-break or a user decision): into every
+in-range album containing the photo, or into the photostream when it is in no album.
+]]
+function M.promote(plan, flickrId, key, how)
+	local function drop(list)
+		for i = #list, 1, -1 do
+			if list[i].id == flickrId then
+				table.remove(list, i)
+			end
+		end
+	end
+	local inAlbum = {}
+	for _, album in ipairs(plan.albumOf[flickrId] or {}) do
+		inAlbum[album.id] = true
+	end
+	local match = { id = flickrId, key = key, how = how }
+	drop(plan.review)
+	drop(plan.photostream.review)
+	for _, a in ipairs(plan.albums) do
+		drop(a.review)
+		if inAlbum[a.album.id] then
+			a.matches[#a.matches + 1] = match
+		end
+	end
+	if next(inAlbum) == nil then
+		plan.photostream.matches[#plan.photostream.matches + 1] = match
+	end
+	plan.stats.matched = plan.stats.matched + 1
+	plan.stats.review = plan.stats.review - 1
 end
 
 --- Catalog range from Matcher records: { min, max } or nil when no dated photos.

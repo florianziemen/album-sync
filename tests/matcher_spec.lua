@@ -68,3 +68,37 @@ describe("Matcher", function()
 		assert.equal("duplicate on Flickr", r.review[1].reason)
 	end)
 end)
+
+describe("Matcher.resolveByExif", function()
+	local cands = {
+		{ key = "A", names = { "20260911-FLO_100.CR3", "FLO_100.CR3" }, subsec = 0.12, serial = "111" },
+		{ key = "B", names = { "20260911-FLO_101.CR3", "FLO_101.CR3" }, subsec = 0.69, serial = "111" },
+		{ key = "C", names = { "IMG_5.HEIC" }, subsec = 0.69, serial = "999" },
+	}
+
+	it("uses the preserved file name", function()
+		assert.equal("B", (Matcher.resolveByExif({ PreservedFileName = "FLO_101.CR3" }, cands)))
+	end)
+
+	it("uses sub-seconds within the camera's serial", function()
+		local key, how = Matcher.resolveByExif({ SubSecTimeOriginal = "69", SerialNumber = "111" }, cands)
+		assert.equal("B", key)
+		assert.equal("exif:subsec", how)
+	end)
+
+	it("uses a unique camera serial", function()
+		assert.equal("C", (Matcher.resolveByExif({ SerialNumber = "999" }, cands)))
+	end)
+
+	it("gives up when nothing is unique", function()
+		assert.is_nil(Matcher.resolveByExif({ SubSecTimeOriginal = "69" }, cands))
+		assert.is_nil(Matcher.resolveByExif({}, cands))
+	end)
+
+	it("parses sub-second strings", function()
+		assert.equal(0.69, Matcher.subsecFraction("69"))
+		assert.equal(0.69, Matcher.subsecFraction("690"))
+		assert.equal(0.05, Matcher.subsecFraction("05"))
+		assert.is_nil(Matcher.subsecFraction(nil))
+	end)
+end)

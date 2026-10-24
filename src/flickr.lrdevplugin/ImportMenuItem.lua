@@ -21,14 +21,13 @@ local AlbumSync = require("AlbumSync")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
-local Fingerprint = require("Fingerprint")
 local FlickrApi = require("FlickrApi")
 local FlickrIndex = require("FlickrIndex")
 local FlickrResponse = require("FlickrResponse")
 local ImportPlan = require("ImportPlan")
 local JsonFile = require("JsonFile")
-local PhotoFields = require("PhotoFields")
-local PhotoRenderer = require("PhotoRenderer")
+local Linker = require("Linker")
+local Matcher = require("Matcher")
 local RateLimiter = require("RateLimiter")
 local ReviewQueue = require("ReviewQueue")
 
@@ -189,6 +188,59 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	end
 
 	local plan = ImportPlan.build(albums, photostream, records, range, linked)
+
+	-- Tier 3: EXIF tie-break for "same time" cases (one getExif call each).
+	local recordByKey = {}
+	for _, r in ipairs(records) do
+		recordByKey[r.key] = r
+	end
+	local exifCandidates = {}
+	for _, item in ipairs(plan.review) do
+		if item.reason:find("^same time") then
+			exifCandidates[#exifCandidates + 1] = item
+		end
+	end
+	if #exifCandidates > 0 then
+		local tie = LrProgressScope({ title = "Flickr: comparing EXIF of unclear matches", functionContext = context })
+		for i, item in ipairs(exifCandidates) do
+			tie:setPortionComplete(i - 1, #exifCandidates)
+			local exif = api:exif(item.id)
+			if exif then
+				local cands = {}
+				for _, key in ipairs(item.candidates) do
+					cands[#cands + 1] = recordByKey[key]
+				end
+				local key, how = Matcher.resolveByExif(exif, cands)
+				log:info(
+					string.format(
+						"import: exif flickr=%s PreservedFileName=%s SubSec=%s Serial=%s -> %s (%s)",
+						item.id,
+						tostring(exif.PreservedFileName),
+						tostring(exif.SubSecTimeOriginal),
+						tostring(exif.SerialNumber),
+						tostring(key),
+						tostring(how)
+					)
+				)
+				for _, c in ipairs(cands) do
+					log:info(
+						string.format(
+							"import: candidate %s names=%s subsec=%s serial=%s iso=%s",
+							c.key,
+							table.concat(c.names, "|"),
+							tostring(c.subsec),
+							tostring(c.serial),
+							tostring(c.iso)
+						)
+					)
+				end
+				if key then
+					ImportPlan.promote(plan, item.id, key, how)
+				end
+			end
+		end
+		tie:done()
+	end
 	local s = plan.stats
 	log:info(
 		string.format(
@@ -209,22 +261,13 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	end
 
 	-- Fingerprints of the current LR state: linked photos are only pushed after a change in LR.
-	local renderSettings = PhotoRenderer.copySettings(service:getPublishSettings()) or {}
+	local renderSettings = Linker.renderSettings(service)
 	local function linksFor(matches)
-		local out = {}
-		for _, m in ipairs(matches) do
-			local photo = photoByKey[m.key]
-			out[#out + 1] = {
-				photo = photo,
-				id = m.id,
-				url = PhotoFields.photoUrl(nsid, m.id),
-				fingerprints = {
-					image = Fingerprint.image(CatalogState.developSettings(photo), renderSettings),
-					metadata = Fingerprint.metadata(PhotoFields.metadataFields(CatalogState.photoMeta(photo))),
-				},
-			}
+		local list = {}
+		for i, m in ipairs(matches) do
+			list[i] = { id = m.id, photo = photoByKey[m.key] }
 		end
-		return out
+		return Linker.links(nsid, list, renderSettings)
 	end
 
 	local apply = LrProgressScope({ title = "Flickr: linking albums", functionContext = context })

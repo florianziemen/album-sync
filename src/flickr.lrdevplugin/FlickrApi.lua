@@ -439,6 +439,53 @@ function M:photosTakenPage(minTaken, maxTaken, page)
 	}
 end
 
+--[[
+EXIF of the stored original (owner only). Returns { [tag] = raw value } (e.g.
+PreservedFileName, SubSecTimeOriginal, DateTimeOriginal, SerialNumber) or nil, err.
+]]
+function M:exif(photoId)
+	local data, e = self:call("flickr.photos.getExif", { photo_id = photoId }, nil, function(d)
+		if type(d.photo) ~= "table" then
+			return "photos.getExif: missing photo"
+		end
+	end)
+	if not data then
+		return nil, e
+	end
+	local out = {}
+	for _, entry in ipairs(data.photo.exif or {}) do
+		local raw = entry.raw
+		if type(raw) == "table" then
+			raw = raw._content
+		end
+		if entry.tag and raw ~= nil and out[entry.tag] == nil then
+			out[entry.tag] = tostring(raw)
+		end
+	end
+	return out
+end
+
+--- URL of a small rendition (Large Square 150 or Small 320) for previews, or nil, err.
+function M:previewUrl(photoId)
+	local data, e = self:call("flickr.photos.getSizes", { photo_id = photoId }, nil, function(d)
+		if type(d.sizes) ~= "table" then
+			return "photos.getSizes: missing sizes"
+		end
+	end)
+	if not data then
+		return nil, e
+	end
+	local best
+	for _, size in ipairs(data.sizes.size or {}) do
+		if size.label == "Small 320" then
+			return size.source
+		elseif size.label == "Large Square" or size.label == "Small" then
+			best = best or size.source
+		end
+	end
+	return best
+end
+
 --- Delete a photo on Flickr (needs perms=delete). Only on explicit user choice.
 function M:deletePhoto(photoId)
 	local _, e = self:call("flickr.photos.delete", { photo_id = photoId }, "POST")

@@ -123,4 +123,66 @@ function M.match(catalog, flickr)
 	return result
 end
 
+--- Fraction of a second from an EXIF SubSecTime string ("69" -> 0.69, "690" -> 0.69).
+function M.subsecFraction(subsec)
+	local digits = tostring(subsec or ""):match("^%s*(%d+)")
+	if not digits then
+		return nil
+	end
+	return tonumber(digits) / 10 ^ #digits
+end
+
+--[[
+Tie-break with the EXIF of the Flickr original (tier 3). exif: FlickrApi:exif result.
+candidates: Matcher catalog records, optionally with subsec (fraction) and serial.
+Returns key, how or nil.
+Order: camera serial narrows the set; then preserved/original file name; then sub-second.
+]]
+function M.resolveByExif(exif, candidates)
+	local pool = candidates
+	local serial = exif.SerialNumber
+	if serial and serial ~= "" then
+		local same = {}
+		for _, c in ipairs(candidates) do
+			if c.serial and tostring(c.serial) == serial then
+				same[#same + 1] = c
+			end
+		end
+		if #same > 0 then
+			pool = same
+		end
+	end
+	if #pool == 1 and pool ~= candidates then
+		return pool[1].key, "exif:serial"
+	end
+	local preserved = exif.PreservedFileName or exif.RawFileName
+	if preserved and preserved ~= "" then
+		local hits = {}
+		for _, c in ipairs(pool) do
+			for _, n in ipairs(c.names or {}) do
+				if base(n) == base(preserved) then
+					hits[#hits + 1] = c
+					break
+				end
+			end
+		end
+		if #hits == 1 then
+			return hits[1].key, "exif:filename"
+		end
+	end
+	local frac = M.subsecFraction(exif.SubSecTimeOriginal)
+	if frac then
+		local hits = {}
+		for _, c in ipairs(pool) do
+			if c.subsec and math.abs(c.subsec - frac) < 0.006 then
+				hits[#hits + 1] = c
+			end
+		end
+		if #hits == 1 then
+			return hits[1].key, "exif:subsec"
+		end
+	end
+	return nil
+end
+
 return M

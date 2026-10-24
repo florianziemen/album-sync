@@ -8,6 +8,7 @@ Flickr publish service.
 - New photos are uploaded private and hidden from search. Nothing is ever deleted on Flickr.
 ]]
 
+local LrBinding = import("LrBinding")
 local LrDate = import("LrDate")
 local LrDialogs = import("LrDialogs")
 local LrErrors = import("LrErrors")
@@ -178,8 +179,55 @@ local function planBatch(session, renderSettings)
 	return entries
 end
 
+-- Choices offered when images changed but the account cannot replace (no Pro).
+local NON_PRO_CHOICES = {
+	{
+		value = "metadataOutdated",
+		title = "Update metadata only",
+		detail = "The old image stays on Flickr; the photos are marked as outdated.",
+	},
+	{
+		value = "leaveModified",
+		title = "Leave as modified",
+		detail = "Nothing is sent; the photos stay in “Modified Photos to Re-Publish”.",
+	},
+	{
+		value = "reuploadKeep",
+		title = "Re-upload, keep the old photo",
+		detail = "Uploads a new photo; the old one stays online so links keep working.",
+	},
+	{
+		value = "reuploadDelete",
+		title = "Re-upload, delete the old photo",
+		detail = "Uploads a new photo, then deletes the old one (comments, faves and links are lost).",
+	},
+}
+
+local function askNonPro(functionContext, count)
+	local f = LrView.osFactory()
+	local props = LrBinding.makePropertyTable(functionContext)
+	props.choice = NON_PRO_CHOICES[1].value
+	local rows = {
+		f:static_text({
+			title = string.format("%d photo(s) have image changes, but replacing images needs Flickr Pro.", count),
+		}),
+	}
+	for _, c in ipairs(NON_PRO_CHOICES) do
+		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
+		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
+	end
+	rows.bind_to_object = props
+	rows.spacing = f:control_spacing()
+	local result = LrDialogs.presentModalDialog({
+		title = "Flickr: image changes without Pro",
+		contents = f:column(rows),
+		actionVerb = "Continue",
+	})
+	return result == "ok" and props.choice or "leaveModified"
+end
+
 -- Replace needs Pro. Without it, ask once for the whole batch.
-local function resolveReplaces(api, user, entries, counts)
+local function resolveReplaces(functionContext, api, user, entries, counts)
 	if not counts.replace then
 		return
 	end
@@ -191,16 +239,11 @@ local function resolveReplaces(api, user, entries, counts)
 	if pro then
 		return
 	end
-	local answer = LrDialogs.confirm(
-		string.format("%d photo(s) have image changes, but replacing images needs Flickr Pro.", counts.replace),
-		"Update metadata only: the old image stays on Flickr and the photos are marked as outdated.\n"
-			.. "Leave as modified: nothing is sent for these photos; they stay in “Modified Photos to Re-Publish”.",
-		"Update metadata only",
-		"Leave as modified"
-	)
+	local choice = askNonPro(functionContext, counts.replace)
+	event("nonProChoice", { choice = choice, n = counts.replace })
 	for _, entry in ipairs(entries) do
 		if entry.action == "replace" then
-			entry.action = (answer == "ok") and "metadataOutdated" or "leaveModified"
+			entry.action = choice
 		end
 	end
 end
@@ -223,8 +266,17 @@ local function execute(api, entry, path)
 	local remoteId = entry.publishedId or entry.flickrId
 	local e
 
-	if action == "upload" then
+	if action == "upload" or action == "reuploadKeep" or action == "reuploadDelete" then
+		local oldId = remoteId
 		remoteId, e = api:upload(path, PhotoFields.uploadFields(entry.fields))
+		if remoteId and action == "reuploadDelete" then
+			-- Only after the new upload succeeded. A failed delete leaves a duplicate, not a loss.
+			local _, delErr = api:deletePhoto(oldId)
+			event("deleteOld", { old = oldId, new = remoteId, err = delErr and delErr.message })
+		elseif remoteId and action == "reuploadKeep" then
+			-- TODO(albums): remove oldId from the albums of this photo.
+			event("keepOld", { old = oldId, new = remoteId })
+		end
 	elseif action == "replace" then
 		local _, replaceErr = api:replace(path, remoteId)
 		e = replaceErr
@@ -305,7 +357,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		adopt = counts.adopt,
 		noop = counts.noop,
 	})
-	resolveReplaces(api, user, entries, counts)
+	resolveReplaces(functionContext, api, user, entries, counts)
 
 	local queue, folder = renderQueue(entries, renderSettings)
 	exportContext:configureProgress({ title = string.format("Publishing %d photo(s) to Flickr", #entries) })

@@ -121,7 +121,13 @@ Implemented in `Fingerprint.lua`. SHA-1 hex of a canonical serialization; this i
   - The master file's size and modification time are deliberately *not* included: writing metadata to DNG/JPEG masters would trigger false replaces.
 - **Metadata fingerprint:** the fields as sent: title, description, and tags from `keywordTagsForExport` (sent with `setTags`, multi-word tags quoted). Location and privacy will follow.
 - **Planner** (`PublishPlanner.lua`): upload / relink (already on Flickr via `flickrId`) / replace / metadata / adopt (published before fingerprints existed: push metadata and store fingerprints) / noop.
-- **Replace without Pro:** one dialog per batch with two choices. "Update metadata only" sets `flickrState=imageOutdated`. "Leave as modified" sends nothing for those photos.
+- **Replace without Pro:** one dialog per batch with four choices:
+  - "Update metadata only" sets `flickrState=imageOutdated`.
+  - "Leave as modified" sends nothing for those photos.
+  - "Re-upload, keep the old photo": new ID, and the old photo stays online so links keep working. Once albums exist, the old photo is removed from the albums.
+  - "Re-upload, delete the old photo": new ID; `flickr.photos.delete` runs on the old photo only after the new upload succeeded.
+
+  This is the only place the plugin deletes on Flickr, and only on this explicit per-batch choice.
 - **Remote fingerprint:** the same metadata fields as returned by Flickr after the push. Used to detect edits made on Flickr. It must be taken from Flickr's response, not from what we sent: on upload, Flickr also imports tags from the embedded IPTC/XMP keywords (observed 2026-10-24), and it normalizes tags.
 
 A "force replace" menu action covers changes that are invisible to the fingerprint, such as process-version rendering differences or a master edited externally.

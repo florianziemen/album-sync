@@ -15,11 +15,15 @@ Actions:
   metadata  only metadata changed: no render
   adopt     published before fingerprints existed: no render, push metadata, store fingerprints
   noop      nothing changed: no render, just record id again
+
+Without Pro, "replace" is turned (once per batch, by the user) into one of:
+  metadataOutdated, leaveModified, reuploadKeep, reuploadDelete
 ]]
 
 local M = {}
 
-M.RENDERS = { upload = true, replace = true }
+-- Actions that need a rendered file. reupload* replace "replace" when the account has no Pro.
+M.RENDERS = { upload = true, replace = true, reuploadKeep = true, reuploadDelete = true }
 
 function M.plan(item)
 	local remoteId = item.publishedId or item.flickrId

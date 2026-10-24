@@ -87,6 +87,14 @@ describe("FlickrApi", function()
 		assert.equal(1, #deps.calls)
 	end)
 
+	it("deletes photos via POST", function()
+		local deps = h.fakeDeps({ { status = 200, body = '{"stat":"ok"}' } })
+		assert.is_true(FlickrApi.new(deps, h.CREDS, ACCESS):deletePhoto("42"))
+		assert.equal("flickr.photos.delete", deps.calls[1].params.method)
+		assert.equal("42", deps.calls[1].params.photo_id)
+		assert.equal("POST", deps.calls[1].method)
+	end)
+
 	it("reads Pro status", function()
 		local deps = h.fakeDeps({
 			{ status = 200, body = '{"person":{"id":"1@N07","ispro":0},"stat":"ok"}' },

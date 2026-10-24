@@ -151,6 +151,15 @@ function M:setMetadata(photoId, fields)
 	return true
 end
 
+--- Delete a photo on Flickr (needs perms=delete). Only on explicit user choice.
+function M:deletePhoto(photoId)
+	local _, e = self:call("flickr.photos.delete", { photo_id = photoId }, "POST")
+	if e then
+		return nil, e
+	end
+	return true
+end
+
 --- Returns true/false for Pro status of `nsid`, or nil, err.
 function M:isPro(nsid)
 	local data, e = self:call("flickr.people.getInfo", { user_id = nsid }, nil, function(d)

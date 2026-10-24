@@ -53,6 +53,25 @@ function M.request(req)
 	return toResponse(LrHttp.get(req.url .. "?" .. query, nil, TIMEOUT))
 end
 
+--[[
+Byte size of a remote file without downloading it: a GET for the first byte only; the size
+is in Content-Range ("bytes 0-0/12345"). Returns bytes or nil, message.
+]]
+function M.remoteSize(url)
+	local body, raw = LrHttp.get(url, { { field = "Range", value = "bytes=0-0" } }, TIMEOUT)
+	raw = raw or {}
+	local h = headerTable(raw)
+	if raw.status == 206 then
+		local total = tonumber((h["content-range"] or ""):match("/(%d+)%s*$"))
+		if total then
+			return total
+		end
+	elseif raw.status == 200 and body then
+		return #body -- server ignored the range: the whole file came back
+	end
+	return nil, string.format("size of %s: status %s", url, tostring(raw.status))
+end
+
 --- req: { url, params, filePath, fileField }. Returns { status, body, headers, message }.
 function M.postMultipart(req)
 	local content = {}

@@ -14,6 +14,7 @@ local LrFunctionContext = import("LrFunctionContext")
 local LrHttp = import("LrHttp")
 local LrLogger = import("LrLogger")
 local LrPathUtils = import("LrPathUtils")
+local LrProgressScope = import("LrProgressScope")
 local LrView = import("LrView")
 
 local AccountGuard = require("AccountGuard")
@@ -24,6 +25,7 @@ local CredentialStore = require("CredentialStore")
 local FlickrApi = require("FlickrApi")
 local FlickrResponse = require("FlickrResponse")
 local JsonFile = require("JsonFile")
+local DuplicateCheck = require("DuplicateCheck")
 local Linker = require("Linker")
 local Matcher = require("Matcher")
 local PhotoFields = require("PhotoFields")
@@ -158,7 +160,7 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 	local dir = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), "album-sync-review")
 	LrFileUtils.createAllDirectories(dir)
 
-	local linkedCount, dismissed, auto, settled = 0, 0, 0, 0
+	local linkedCount, dismissed, auto, settled, duplicates = 0, 0, 0, 0, {}
 	local linkedFlickr = linkedIds -- every Flickr id linked anywhere in this catalog
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
@@ -184,6 +186,75 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 		linkedCount = linkedCount + 1
 		log:info(string.format("review: linked flickr=%s to %s (%s) in %s", item.id, key, how, where))
 		return true
+	end
+
+	-- Pre-pass: several Flickr copies of one catalog photo with identical file sizes are the same
+	-- file uploaded more than once. Keep the oldest copy (or the one linked already), list the rest.
+	local groups = DuplicateCheck.groups(items, linked)
+	if #groups > 0 then
+		local scope = LrProgressScope({
+			title = string.format("Album Sync: comparing file sizes of %d duplicate group(s)", #groups),
+			functionContext = context,
+		})
+		for gi, g in ipairs(groups) do
+			scope:setPortionComplete(gi - 1, #groups)
+			if scope:isCanceled() then
+				break
+			end
+			local sizes = {}
+			for _, id in ipairs(g.ids) do
+				sizes[id] = api:originalSize(id)
+			end
+			local decision, why = DuplicateCheck.decide(g.ids, sizes)
+			if decision and g.linkedId then
+				-- keep the copy the import linked; every other copy is a duplicate of it
+				decision.duplicates = {}
+				for _, id in ipairs(g.ids) do
+					if id ~= g.linkedId then
+						decision.duplicates[#decision.duplicates + 1] = id
+					end
+				end
+				decision.primary = g.linkedId
+			end
+			if decision then
+				local ok = true
+				if not g.linkedId then
+					local albums = AlbumSync.albumsOf(api, decision.primary) or {}
+					local where = Linker.linkOne(service, nsid, photoByKey[g.key], decision.primary, albums)
+					ok = where ~= ""
+					if ok then
+						linked[g.key] = decision.primary
+						linkedFlickr[decision.primary] = true
+						linkedCount = linkedCount + 1
+					end
+				end
+				if ok then
+					for _, id in ipairs(g.queued) do
+						queue:remove(id)
+					end
+					for _, id in ipairs(decision.duplicates) do
+						duplicates[#duplicates + 1] =
+							{ keep = decision.primary, duplicate = id, bytes = decision.bytes }
+					end
+					log:info(
+						string.format(
+							"review: identical copies (%d bytes) of %s: kept %s, duplicates %s",
+							decision.bytes,
+							g.key,
+							decision.primary,
+							table.concat(decision.duplicates, ",")
+						)
+					)
+				end
+			else
+				log:info(string.format("review: copies of %s stay for review: %s", g.key, tostring(why)))
+			end
+		end
+		scope:done()
+		items = {}
+		for i, item in ipairs(queue:items()) do
+			items[i] = item
+		end
 	end
 
 	for i, item in ipairs(items) do
@@ -254,15 +325,38 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 	end
 	LrFileUtils.delete(dir)
 
+	-- Duplicate uploads found by size: a list to clean up on Flickr (nothing is deleted here).
+	local listNote = ""
+	if #duplicates > 0 then
+		local lines =
+			{ "Duplicate uploads on Flickr (identical file to the kept photo). Delete them on Flickr if you like:" }
+		for _, d in ipairs(duplicates) do
+			lines[#lines + 1] = string.format(
+				"duplicate %s   (keep %s, %d bytes)",
+				PhotoFields.photoUrl(nsid, d.duplicate),
+				PhotoFields.photoUrl(nsid, d.keep),
+				d.bytes
+			)
+		end
+		local path = JsonFile.path("duplicates-" .. JsonFile.catalogKey() .. ".txt")
+		local f = io.open(path, "w")
+		if f then
+			f:write(table.concat(lines, "\n"), "\n")
+			f:close()
+			listNote = string.format("\n\n%d duplicate upload(s) on Flickr are listed in:\n%s", #duplicates, path)
+		end
+	end
+
 	LrDialogs.message(
 		"Album Sync: review",
 		string.format(
-			"Linked %d photo(s) (%d automatically by EXIF), removed %d, %d were already linked. %d left for later.",
+			"Linked %d photo(s) (%d automatically by EXIF), removed %d, %d were already linked. %d left for later.%s",
 			linkedCount,
 			auto,
 			dismissed,
 			settled,
-			#queue:items()
+			#queue:items(),
+			listNote
 		),
 		"info"
 	)

@@ -24,6 +24,7 @@ return function()
 	return {
 		transport = HttpTransport.request,
 		postMultipart = HttpTransport.postMultipart,
+		remoteSize = HttpTransport.remoteSize,
 		now = function()
 			return LrDate.currentTime() + UNIX_OFFSET
 		end,

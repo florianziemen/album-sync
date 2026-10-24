@@ -559,6 +559,35 @@ function M:exif(photoId)
 	return out
 end
 
+--[[
+Byte size of the stored original (owner; Pro accounts only since 2025): its URL from
+getSizes, then deps.remoteSize (first byte only, no API call). Returns bytes or nil, err.
+]]
+function M:originalSize(photoId)
+	local data, e = self:call("flickr.photos.getSizes", { photo_id = photoId }, nil, function(d)
+		if type(d.sizes) ~= "table" then
+			return "photos.getSizes: missing sizes"
+		end
+	end)
+	if not data then
+		return nil, e
+	end
+	for _, size in ipairs(data.sizes.size or {}) do
+		if size.label == "Original" and size.source then
+			if not self.deps.remoteSize then
+				return nil, { class = "permanent", message = "no remoteSize dependency" }
+			end
+			local bytes, err = self.deps.remoteSize(size.source)
+			self:_log(bytes and "info" or "error", string.format("original %s: %s", photoId, tostring(bytes or err)))
+			if not bytes then
+				return nil, { class = "transient", message = err }
+			end
+			return bytes
+		end
+	end
+	return nil, { class = "permanent", message = "no original available (free account?)" }
+end
+
 --- URL of a small rendition (Large Square 150 or Small 320) for previews, or nil, err.
 function M:previewUrl(photoId)
 	local data, e = self:call("flickr.photos.getSizes", { photo_id = photoId }, nil, function(d)

@@ -269,6 +269,10 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **EXIF tie-break (tier 3):** "same time" review cases get one `photos.getExif` each during import and review. The camera serial narrows the candidates, then `PreservedFileName` (or `RawFileName`) is compared with the LR names, then `SubSecTimeOriginal` with the LR sub-second (from the fraction in `dateTimeOriginalISO8601`, else from the raw `dateTimeOriginal`). The raw values are logged for verification. **Verified 2026-10-24:** 846 albums, a 254-photo test catalog; 4 burst cases resolved by `PreservedFileName`. Whether LR's capture time includes sub-seconds is not verified yet.
 - **Review queue:** `album-sync/review-<catalog>.json`. The command "Album Sync: Review unclear matches…" tries EXIF first. Otherwise it shows the Flickr preview (`getSizes`, Small 320) next to the candidates (`catalog_photo`), and the user links one, dismisses ("not in this catalog") or defers. Albums are looked up with `getAllContexts` at link time; a photo in no album goes to Photostream.
 
+**Duplicates by file size** (`DuplicateCheck.lua`): "Review unclear matches…" first groups the "duplicate on Flickr" items by catalog photo. For each copy it gets the original's URL (`photos.getSizes`, owner and Pro only) and its byte size (`GET` with `Range: bytes=0-0`; the total is in `Content-Range`, so nothing is downloaded and the request is not an API call).
+- Identical sizes mean the same file was uploaded again. The oldest copy (or the one already linked) is linked, and the others leave the queue and are written to `album-sync/duplicates-<catalog>.txt` for manual cleanup on Flickr.
+- Different sizes mean different versions; they stay in review. Nothing is deleted.
+
 **Known failure modes.**
 
 - Burst shots taken in the same second.

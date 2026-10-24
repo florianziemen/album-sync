@@ -82,12 +82,12 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	}
 	local right = { spacing = f:control_spacing() }
 	for _, c in ipairs(candidates) do
+		local choose = c.linkedTo
+				and f:static_text({ title = c.name .. " (already linked to Flickr photo " .. c.linkedTo .. ")" })
+			or f:radio_button({ title = "This one: " .. c.name, value = LrView.bind("choice"), checked_value = c.key })
 		right[#right + 1] = f:row({
 			f:catalog_photo({ photo = c.photo, width = 160, height = 160 }),
-			f:column({
-				f:radio_button({ title = "This one: " .. c.name, value = LrView.bind("choice"), checked_value = c.key }),
-				f:static_text({ title = "Taken: " .. tostring(c.taken) }),
-			}),
+			f:column({ choose, f:static_text({ title = "Taken: " .. tostring(c.taken) }) }),
 		})
 	end
 	right[#right + 1] = f:radio_button({
@@ -138,7 +138,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 		return
 	end
 
-	local records, photoByKey = CatalogState.matcherRecords()
+	local records, photoByKey, linked = CatalogState.matcherRecords()
 	local recordByKey = {}
 	for _, r in ipairs(records) do
 		recordByKey[r.key] = r
@@ -150,6 +150,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	local function link(item, key, how)
 		local albums = AlbumSync.albumsOf(api, item.id) or {}
 		local where = Linker.linkOne(service, nsid, photoByKey[key], item.id, albums)
+		linked[key] = item.id -- never offer this photo again in this session
 		queue:remove(item.id)
 		linked = linked + 1
 		log:info(string.format("review: linked flickr=%s to %s (%s) in %s", item.id, key, how, where))
@@ -166,6 +167,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 					record = r,
 					name = r.names[1] or key,
 					taken = r.taken,
+					linkedTo = linked[key],
 				}
 			end
 		end
@@ -177,10 +179,14 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 			local exif = api:exif(item.id)
 			if exif then
 				local recs = {}
-				for j, c in ipairs(candidates) do
-					recs[j] = c.record
+				for _, c in ipairs(candidates) do
+					if not c.linkedTo then
+						recs[#recs + 1] = c.record
+					end
 				end
-				resolved, how = Matcher.resolveByExif(exif, recs)
+				if #recs > 0 then
+					resolved, how = Matcher.resolveByExif(exif, recs)
+				end
 			end
 			if resolved then
 				auto = auto + 1

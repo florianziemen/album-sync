@@ -12,8 +12,9 @@ function M.wrapped(f, text, chars)
 	chars = chars or M.CHARS
 	local lines = 0
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		-- byte length overestimates multi-byte characters: at worst one spare line
-		lines = lines + math.max(1, math.ceil(#line / (chars * 0.85)))
+		-- count characters, not bytes (UTF-8 continuation bytes are 0x80-0xBF)
+		local _, n = line:gsub("[^\128-\191]", "")
+		lines = lines + math.max(1, math.ceil(n / chars))
 	end
 	return f:static_text({ title = text, width_in_chars = chars, height_in_lines = lines })
 end

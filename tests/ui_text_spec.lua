@@ -12,6 +12,8 @@ describe("UiText.wrapped", function()
 		assert.same({ title = "Short text.", width_in_chars = 70, height_in_lines = 1 }, short)
 		local long = UiText.wrapped(f, string.rep("word ", 30)) -- 150 characters
 		assert.equal(3, long.height_in_lines)
+		-- exactly at the width: one line; multi-byte quotes count as one character each
+		assert.equal(1, UiText.wrapped(f, string.rep("x", 68) .. "“”").height_in_lines)
 	end)
 
 	it("counts explicit line breaks", function()

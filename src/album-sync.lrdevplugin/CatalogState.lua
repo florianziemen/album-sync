@@ -207,6 +207,44 @@ function M.pluginCollections()
 	return out
 end
 
+--[[
+Publish services of other plugins (for example Lightroom's built-in Flickr service), read-only.
+Returns array of { pluginId, name, collections, photos, links = { { photo, key, id, url } } }.
+]]
+function M.foreignPublished()
+	local out = {}
+	for _, service in ipairs(LrApplication.activeCatalog():getPublishServices()) do
+		local pluginId = service:getPluginId()
+		if pluginId ~= _PLUGIN.id then
+			local entry = { pluginId = pluginId, name = service:getName(), collections = 0, photos = 0, links = {} }
+			local function walk(container)
+				for _, c in ipairs(container:getChildCollections()) do
+					entry.collections = entry.collections + 1
+					for _, pp in ipairs(c:getPublishedPhotos()) do
+						entry.photos = entry.photos + 1
+						local rid = pp:getRemoteId()
+						if rid then
+							local photo = pp:getPhoto()
+							entry.links[#entry.links + 1] = {
+								photo = photo,
+								key = photo.localIdentifier,
+								id = tostring(rid),
+								url = pp:getRemoteUrl(),
+							}
+						end
+					end
+				end
+				for _, set in ipairs(container:getChildCollectionSets()) do
+					walk(set)
+				end
+			end
+			walk(service)
+			out[#out + 1] = entry
+		end
+	end
+	return out
+end
+
 --- lockedNsid of each publish service of this plugin.
 function M.lockedAccounts()
 	local out = {}

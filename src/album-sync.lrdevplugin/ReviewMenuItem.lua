@@ -204,6 +204,25 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 	-- Repair stale Flickr ID fields first, also when there is nothing to review.
 	local reading = LrProgressScope({ title = "Album Sync: reading catalog…", functionContext = context })
 	local publishedLinks = CatalogState.publishedLinks()
+	local okOthers, others = LrTasks.pcall(CatalogState.foreignPublished)
+	if not okOthers then
+		log:error("review: reading other publish services failed: " .. tostring(others))
+		others = {}
+	end
+	for _, other in ipairs(others) do
+		local sample = other.links[1]
+		log:info(
+			string.format(
+				"review: other publish service %q (%s): %d collections, %d photos, %d with remote id%s",
+				other.name,
+				tostring(other.pluginId),
+				other.collections,
+				other.photos,
+				#other.links,
+				sample and string.format(", e.g. %s -> %s", sample.id, tostring(sample.url)) or ""
+			)
+		)
+	end
 	for _, ch in ipairs(CatalogState.repairFlickrIds(publishedLinks)) do
 		log:info(
 			string.format(

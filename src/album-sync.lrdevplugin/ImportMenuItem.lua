@@ -30,6 +30,7 @@ local Linker = require("Linker")
 local Matcher = require("Matcher")
 local RateLimiter = require("RateLimiter")
 local ReviewQueue = require("ReviewQueue")
+local UiText = require("UiText")
 
 local log = LrLogger("album-sync")
 log:enable("logfile")
@@ -80,8 +81,9 @@ local function choose(context, plan)
 		contents = f:column({
 			bind_to_object = props,
 			spacing = f:control_spacing(),
-			f:static_text({
-				title = string.format(
+			UiText.wrapped(
+				f,
+				string.format(
 					"%d of %d albums have photos in this catalog's date range. %d Flickr photos in range: "
 						.. "%d matched, %d to review, %d not in this catalog.",
 					s.albumsInRange,
@@ -91,7 +93,8 @@ local function choose(context, plan)
 					s.review,
 					s.notInCatalog
 				),
-			}),
+				90
+			),
 			f:scrolled_view({ width = 640, height = 360, f:column(rows) }),
 			f:checkbox({
 				title = string.format(
@@ -100,10 +103,12 @@ local function choose(context, plan)
 				),
 				value = LrView.bind("photostream"),
 			}),
-			f:static_text({
-				title = "Nothing is changed on Flickr. Unclear matches are kept for review "
+			UiText.wrapped(
+				f,
+				"Nothing is changed on Flickr. Unclear matches are kept for review "
 					.. "(File > Plug-in Extras > Album Sync: Review unclear matches…).",
-			}),
+				90
+			),
 		}),
 	})
 	if result ~= "ok" then

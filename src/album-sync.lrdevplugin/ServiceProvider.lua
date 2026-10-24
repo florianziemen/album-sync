@@ -43,6 +43,7 @@ local RenderQueue = require("RenderQueue")
 local TaskPool = require("TaskPool")
 local TicketPoller = require("TicketPoller")
 local Uploader = require("Uploader")
+local UiText = require("UiText")
 
 local RENDER_AHEAD = 2
 
@@ -143,7 +144,7 @@ function provider.viewForCollectionSettings(f, _, info)
 				},
 			}),
 		}),
-		f:static_text({ title = "A photo's “Flickr privacy” field (Metadata panel) overrides these." }),
+		UiText.wrapped(f, "A photo's “Flickr privacy” field (Metadata panel) overrides these."),
 	})
 end
 
@@ -285,10 +286,11 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 					width_in_chars = 40,
 				}),
 			}),
-			f:static_text({
-				title = "Accounts are added with File > Plug-in Extras > Album Sync: Log in to Flickr. "
-					.. "Use one Flickr account per catalog.",
-			}),
+			UiText.wrapped(
+				f,
+				"Accounts are added with File > Plug-in Extras > Album Sync: Log in to Flickr. "
+					.. "Use one Flickr account per catalog."
+			),
 		},
 		{
 			title = "Visibility",
@@ -300,10 +302,11 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			f:row({
 				f:checkbox({ title = "Send location (GPS) by default", value = bind("sendLocation") }),
 			}),
-			f:static_text({
-				title = "Albums can override privacy and location (collection settings); "
-					.. "photos can override privacy (Metadata panel, “Flickr privacy”).",
-			}),
+			UiText.wrapped(
+				f,
+				"Albums can override privacy and location (collection settings); "
+					.. "photos can override privacy (Metadata panel, “Flickr privacy”)."
+			),
 		},
 		{
 			title = "Upload",
@@ -444,18 +447,18 @@ local function askNonPro(functionContext, count, allowDelete)
 	local props = LrBinding.makePropertyTable(functionContext)
 	props.choice = NON_PRO_CHOICES[1].value
 	local rows = {
-		f:static_text({
-			title = string.format("%d photo(s) have image changes, but replacing images needs Flickr Pro.", count),
-		}),
+		UiText.wrapped(
+			f,
+			string.format("%d photo(s) have image changes, but replacing images needs Flickr Pro.", count)
+		),
 	}
 	for _, c in ipairs(NON_PRO_CHOICES) do
 		if c.value == "reuploadDelete" and not allowDelete then
-			rows[#rows + 1] =
-				f:static_text({ title = "(Deleting the old photo needs a login with “delete” permission.)" })
+			rows[#rows + 1] = UiText.wrapped(f, "(Deleting the old photo needs a login with “delete” permission.)")
 			break
 		end
 		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
-		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
+		rows[#rows + 1] = UiText.wrapped(f, "      " .. c.detail)
 	end
 	rows.bind_to_object = props
 	rows.spacing = f:control_spacing()
@@ -656,17 +659,18 @@ local function askConflicts(functionContext, conflicted)
 	local props = LrBinding.makePropertyTable(functionContext)
 	props.choice = "skip"
 	local rows = {
-		f:static_text({
-			title = string.format(
+		UiText.wrapped(
+			f,
+			string.format(
 				"%d photo(s) were changed both in Lightroom and on Flickr since the last publish: %s.",
 				#conflicted,
 				table.concat(summary, ", ")
-			),
-		}),
+			)
+		),
 	}
 	for _, c in ipairs(CONFLICT_CHOICES) do
 		rows[#rows + 1] = f:radio_button({ title = c.title, value = LrView.bind("choice"), checked_value = c.value })
-		rows[#rows + 1] = f:static_text({ title = "      " .. c.detail })
+		rows[#rows + 1] = UiText.wrapped(f, "      " .. c.detail)
 	end
 	rows[#rows + 1] = f:static_text({ title = "Details per photo are in the log (album-sync.log)." })
 	rows.bind_to_object = props

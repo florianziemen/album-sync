@@ -29,6 +29,7 @@ local Matcher = require("Matcher")
 local PhotoFields = require("PhotoFields")
 local RateLimiter = require("RateLimiter")
 local ReviewQueue = require("ReviewQueue")
+local UiText = require("UiText")
 
 local log = LrLogger("album-sync")
 log:enable("logfile")
@@ -72,7 +73,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 		f:static_text({ title = "Flickr: " .. tostring(item.title or item.id) }),
 		f:static_text({ title = "Taken: " .. tostring(item.taken or "?") }),
 		f:static_text({ title = "Album: " .. tostring(item.album or "(none)") }),
-		f:static_text({ title = "Why unclear: " .. tostring(item.reason) }),
+		UiText.wrapped(f, "Why unclear: " .. tostring(item.reason), 45),
 		f:push_button({
 			title = "Open on Flickr",
 			action = function()
@@ -83,7 +84,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	local right = { spacing = f:control_spacing() }
 	for _, c in ipairs(candidates) do
 		local choose = c.linkedTo
-				and f:static_text({ title = c.name .. " (already linked to Flickr photo " .. c.linkedTo .. ")" })
+				and UiText.wrapped(f, c.name .. " (already linked to Flickr photo " .. c.linkedTo .. ")", 40)
 			or f:radio_button({ title = "This one: " .. c.name, value = LrView.bind("choice"), checked_value = c.key })
 		right[#right + 1] = f:row({
 			f:catalog_photo({ photo = c.photo, width = 160, height = 160 }),

@@ -17,6 +17,7 @@ local CredentialStore = require("CredentialStore")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local AppDeps = require("AppDeps")
+local UiText = require("UiText")
 
 local log = LrLogger("album-sync")
 log:enable("logfile")
@@ -35,7 +36,7 @@ local function askCredentials(context, stored)
 		contents = f:column({
 			bind_to_object = props,
 			spacing = f:control_spacing(),
-			f:static_text({ title = "Create a key at flickr.com/services/apps/create (requires Flickr Pro)." }),
+			UiText.wrapped(f, "Create a key at flickr.com/services/apps/create (requires Flickr Pro)."),
 			f:row({
 				f:static_text({ title = "Key:", width = 60 }),
 				f:edit_field({ value = LrView.bind("consumerKey"), width_in_chars = 36 }),
@@ -55,7 +56,7 @@ local function askCredentials(context, stored)
 					},
 				}),
 			}),
-			f:static_text({ title = "Log in to the account you want in the browser (use a private window if needed)." }),
+			UiText.wrapped(f, "Log in to the account you want in the browser (use a private window if needed)."),
 		}),
 	})
 	local key = (props.consumerKey or ""):gsub("%s", "")

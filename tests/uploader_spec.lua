@@ -259,3 +259,44 @@ describe("Uploader.reconcile", function()
 		assert.is_not_nil(journal:get("a"))
 	end)
 end)
+
+describe("Uploader marker checks", function()
+	local function exifFor(markers)
+		return function(_, id)
+			local uuid = markers[id]
+			return uuid and { ["XMP-dc:Identifier"] = "lrflickr:uuid=" .. uuid .. ";copy=" } or {}
+		end
+	end
+
+	it("never takes a same-titled photo of another Lightroom photo after a lost response", function()
+		local journal = Journal.new(memoryStorage())
+		local api = fakeApi({
+			uploadAsync = { { nil, { class = "transient", message = "connection lost" } }, { "T2" } },
+			recentUploads = { { { { id = "OTHER", title = "IMG_1" } } }, { {} }, { {} } },
+			checkTickets = { { { T2 = { complete = 1, photoId = "MINE" } } } },
+		})
+		api.exif = exifFor({ OTHER = "someone-else" })
+		local id = Uploader.new(deps(), api, journal):upload("u1", "/x.jpg", { title = "IMG_1" })
+		assert.equal("MINE", id)
+	end)
+
+	it("takes the photo carrying this upload's marker", function()
+		local journal = Journal.new(memoryStorage())
+		local api = fakeApi({
+			uploadAsync = { { nil, { class = "transient", message = "lost" } } },
+			recentUploads = { { { { id = "OTHER", title = "IMG_1" }, { id = "MINE", title = "IMG_1" } } } },
+		})
+		api.exif = exifFor({ OTHER = "someone-else", MINE = "u1" })
+		assert.equal("MINE", Uploader.new(deps(), api, journal):upload("u1", "/x.jpg", { title = "IMG_1" }))
+	end)
+
+	it("reconciles same-titled lost entries exactly by marker", function()
+		local journal = Journal.new(memoryStorage())
+		journal:open("a", { title = "IMG", started = 10 })
+		journal:open("b", { title = "IMG", started = 20 })
+		local api = fakeApi({ recentUploads = { { { { id = "P1", title = "IMG" }, { id = "P2", title = "IMG" } } } } })
+		api.exif = exifFor({ P1 = "b", P2 = "a" })
+		local r = Uploader.new(deps(), api, journal):reconcile()
+		assert.same({ a = "P2", b = "P1" }, r.linked)
+	end)
+end)

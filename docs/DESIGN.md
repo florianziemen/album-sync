@@ -135,6 +135,8 @@ Per batch, in `processRenderedPhotos`:
 
 **Improvements (implemented):**
 - **Shared ticket polling** (`TicketPoller.lua`): all workers of a run register their tickets, and one `checkTickets` call covers all open tickets, at most every 1.5 s. Before, per-worker polling consumed the rate limit, and album adds waited up to 2.8 s.
+- **Duplicate search confirmed by marker:** after an ambiguous upload failure, and when reconciling the journal, a recent upload with the right title only counts if its `dc:identifier` marker carries this photo's uuid (one `getExif` per candidate). Observed 2026-10-24 before this fix: after "connection lost" (-1005), a same-titled photo from the previous run was taken, and LR then refused to record the duplicate remote ID ("recordPublishedPhotoUrl must be called after recordPublishedPhotoId").
+- LR reports NSURL errors with `errorCode` as a name ("networkConnectionLost" for both -1005 and -1009), a localized `name`, and the numeric code in `nativeCode`.
 - **No duplicate search when nothing was sent:** network errors that prove the request never reached Flickr (NSURLError −1003 cannot find host, −1004 cannot connect, −1006 DNS failure, −1009 offline) set `notSent`, and the retry skips the search. Timeouts and lost connections stay ambiguous. The injected "before sending" fault is marked `notSent` too.
 
 ## 6. Change detection (fingerprints)

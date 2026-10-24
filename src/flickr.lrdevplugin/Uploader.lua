@@ -12,6 +12,7 @@ Robust, duplicate-safe photo upload (docs/DESIGN.md §5).
 Dependencies: now, sleep, log, random01 (as for FlickrApi). api: FlickrApi. journal: Journal.
 ]]
 
+local JpegXmp = require("JpegXmp")
 local Retry = require("Retry")
 
 local M = {}
@@ -74,12 +75,39 @@ function M:waitTicket(ticket)
 end
 
 --[[
-Search own uploads since `since` for `title`. Returns
+Of `ids`, the ones whose upload marker (JpegXmp, read via getExif) belongs to `uuid`.
+Photos with another photo's marker or without a marker are not ours. Without a uuid or an
+exif-capable api (tests of the title-only logic) all ids are returned.
+]]
+function M:_ours(ids, uuid)
+	if not uuid or not self.api.exif then
+		return ids
+	end
+	local mine = {}
+	for _, id in ipairs(ids) do
+		local exif = self.api:exif(id)
+		local marker = JpegXmp.fromExif(exif)
+		if marker.uuid == uuid then
+			mine[#mine + 1] = id
+		else
+			self:_log(
+				"info",
+				string.format("upload %s: candidate %s is not ours (marker %s)", uuid, id, tostring(marker.uuid))
+			)
+		end
+	end
+	return mine
+end
+
+--[[
+Search own uploads since `since` for `title`, confirmed by the upload marker of photo `uuid`
+(a same-titled photo of another Lightroom photo must never be taken: observed 2026-10-24).
+Returns
   photoId        exactly one match
   nil            no match (after M.RECENT_CHECKS searches)
   false, ids     several matches: ambiguous
 ]]
-function M:findRecent(title, since)
+function M:findRecent(title, since, uuid)
 	for check = 1, M.RECENT_CHECKS do
 		local photos = self.api:recentUploads(since - M.RECENT_SLACK)
 		if photos then
@@ -89,6 +117,7 @@ function M:findRecent(title, since)
 					ids[#ids + 1] = p.id
 				end
 			end
+			ids = self:_ours(ids, uuid)
 			if #ids == 1 then
 				return ids[1]
 			elseif #ids > 1 then
@@ -149,7 +178,7 @@ function M:upload(key, path, fields, opts)
 				self:_log("info", string.format("upload %s: not sent (%s), retrying without search", key, err.message))
 				return nil
 			end
-			local found, ambiguous = self:findRecent(fields.title, started)
+			local found, ambiguous = self:findRecent(fields.title, started, key)
 			if found then
 				self:_log("info", string.format("upload %s: found on Flickr after lost response: %s", key, found))
 				return found
@@ -235,19 +264,23 @@ function M:reconcile()
 		end
 		for _, title in ipairs(order) do
 			local items = byTitle[title]
-			local ids = {}
+			local titled = {}
 			for _, p in ipairs(photos or {}) do
 				if p.title == title and not self.claimed[p.id] then
-					ids[#ids + 1] = p.id
+					titled[#titled + 1] = p.id
 				end
 			end
 			for _, item in ipairs(items) do
+				-- The marker tells whose upload a photo is; without it (tests) several lost entries
+				-- of one title cannot be told apart.
+				local ids = self:_ours(titled, self.api.exif and item.key or nil)
+				local exact = self.api.exif ~= nil
 				if not photos then
 					result.pending[#result.pending + 1] = item.key -- listing failed: try again next run
 				elseif #ids == 0 then
 					result.dropped[#result.dropped + 1] = item.key
 					self.journal:close(item.key)
-				elseif #ids == 1 and #items == 1 then
+				elseif #ids == 1 and (exact or #items == 1) then
 					self.claimed[ids[1]] = true
 					result.linked[item.key] = ids[1]
 				else

@@ -4,8 +4,8 @@ File > Plug-in Extras > "Album Sync: Review unclear matches…"
 Works through the review queue of this catalog (read-only on Flickr). Each item first gets
 an EXIF tie-break; otherwise a dialog shows the Flickr photo next to the candidate catalog
 photos (with notes on virtual copies and identical files): link one, mark "not in this
-catalog" (removed from the queue), decide later, or stop and show the candidates in the
-collection "Album Sync: review candidates".
+catalog" (removed from the queue), decide later, or stop and put the candidates of all queued
+items into the collection "Album Sync: review candidates" (this item's are selected).
 Linked photos go into the collections of the photo's albums, else into "Photostream".
 ]]
 
@@ -166,7 +166,7 @@ local function ask(context, item, index, total, candidates, previewPath, nsid)
 	right[#right + 1] =
 		f:radio_button({ title = "Decide later [l]", value = LrView.bind("choice"), checked_value = "later" })
 	right[#right + 1] = f:radio_button({
-		title = "Stop and select the candidates in the Library [s]",
+		title = "Stop; collect all candidates in the Library, select these [s]",
 		value = LrView.bind("choice"),
 		checked_value = "show",
 	})
@@ -396,11 +396,23 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 					for n, c in ipairs(candidates) do
 						photos[n] = c.photo
 					end
+					-- Candidates of every queued item; this item's stay selected.
+					local all, seen = {}, {}
+					for _, queued in ipairs(queue:items()) do
+						for _, key in ipairs(queued.candidates or {}) do
+							local photo = photoByKey[key]
+							if photo and not seen[key] then
+								seen[key] = true
+								all[#all + 1] = photo
+							end
+						end
+					end
 					-- A collection of its own: visible whatever source or filter was active.
 					local collection
 					catalog:withWriteAccessDo("Album Sync: review candidates", function()
 						collection = catalog:createCollection("Album Sync: review candidates", nil, true)
 						collection:removeAllPhotos()
+						collection:addPhotos(all)
 						collection:addPhotos(photos)
 					end)
 					catalog:setActiveSources({ collection })
@@ -408,7 +420,9 @@ LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches",
 					catalog:setSelectedPhotos(photos[1], photos)
 					log:info(
 						string.format(
-							"review: showing %d candidates of flickr=%s in collection %q",
+							"review: %d candidates in collection %q, selected the %d of flickr=%s",
+							#collection:getPhotos(),
+							collection:getName(),
 							#photos,
 							item.id,
 							collection:getName()

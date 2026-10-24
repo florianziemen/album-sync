@@ -20,7 +20,7 @@ local FlickrResponse = require("FlickrResponse")
 local RateLimiter = require("RateLimiter")
 local RemoteCheck = require("RemoteCheck")
 
-local log = LrLogger("flockr")
+local log = LrLogger("album-sync")
 log:enable("logfile")
 
 local function fatal(message)

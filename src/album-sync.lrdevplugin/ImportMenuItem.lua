@@ -31,7 +31,7 @@ local Matcher = require("Matcher")
 local RateLimiter = require("RateLimiter")
 local ReviewQueue = require("ReviewQueue")
 
-local log = LrLogger("flockr")
+local log = LrLogger("album-sync")
 log:enable("logfile")
 
 local function fatal(message)

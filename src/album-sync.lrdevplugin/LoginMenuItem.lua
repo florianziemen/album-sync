@@ -18,7 +18,7 @@ local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local AppDeps = require("AppDeps")
 
-local log = LrLogger("flockr")
+local log = LrLogger("album-sync")
 log:enable("logfile")
 
 local deps = AppDeps

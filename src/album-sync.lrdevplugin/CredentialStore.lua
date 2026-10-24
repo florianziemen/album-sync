@@ -7,7 +7,7 @@ not secret and lives in the plugin prefs. Nothing secret goes into prefs or logs
 local LrPasswords = import("LrPasswords")
 local LrPrefs = import("LrPrefs")
 
-local PREFIX = "flockr."
+local PREFIX = "album-sync."
 
 local M = {}
 

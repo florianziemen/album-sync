@@ -12,7 +12,7 @@ local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
 local LrLogger = import("LrLogger")
 
-local log = LrLogger("flockr")
+local log = LrLogger("album-sync")
 log:enable("logfile")
 
 local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerprint", "metadataState" }

@@ -1,11 +1,11 @@
 return {
 	LrSdkVersion = 13.0,
 	LrSdkMinimumVersion = 13.0,
-	LrToolkitIdentifier = "io.github.florianziemen.flockr",
-	LrPluginName = "Flockr",
+	LrToolkitIdentifier = "io.github.florianziemen.album-sync",
+	LrPluginName = "Album Sync",
 
 	LrExportServiceProvider = {
-		title = "Flockr",
+		title = "Flickr",
 		file = "ServiceProvider.lua",
 	},
 

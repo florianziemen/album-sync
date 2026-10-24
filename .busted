@@ -1,6 +1,6 @@
 return {
 	_all = {
-		lpath = "src/flockr.lrdevplugin/?.lua;./?.lua",
+		lpath = "src/album-sync.lrdevplugin/?.lua;./?.lua",
 		ROOT = { "tests" },
 	},
 }

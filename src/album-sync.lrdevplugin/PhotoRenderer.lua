@@ -91,7 +91,7 @@ end
 function M.makeFolder()
 	local folder = LrPathUtils.child(
 		LrPathUtils.getStandardFilePath("temp"),
-		string.format("flockr-%d", math.floor(LrDate.currentTime() * 1000))
+		string.format("album-sync-%d", math.floor(LrDate.currentTime() * 1000))
 	)
 	LrFileUtils.createAllDirectories(folder)
 	return folder
@@ -145,7 +145,7 @@ function M.renderer(baseSettings, folder)
 				job.ok, job.result = false, "no rendition produced"
 			end
 			job.done = true
-		end, "flockr render")
+		end, "album-sync render")
 		return job
 	end
 

@@ -69,8 +69,15 @@ function M.build(albums, photostream, catalog, range, linked)
 	table.sort(review, function(a, b)
 		return a.id < b.id
 	end)
+	local photoById = {}
+	for _, p in ipairs(all) do
+		photoById[p.id] = p
+	end
 	local reviewById = {}
 	for _, item in ipairs(review) do
+		local p = photoById[item.id]
+		item.title = p and p.title
+		item.taken = p and p.taken
 		local albumsOfPhoto = albumOf[item.id]
 		item.album = albumsOfPhoto and albumsOfPhoto[1].title or nil
 		item.albumIds = {}

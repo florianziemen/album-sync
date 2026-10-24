@@ -44,6 +44,8 @@ describe("ImportPlan", function()
 		assert.same({ { id = "3", key = "u3", how = "time+title" } }, r.photostream.matches)
 		assert.equal(1, #r.review)
 		assert.truthy(r.review[1].reason:find("already linked to Flickr photo 777", 1, true))
+		assert.equal("IMG_4", r.review[1].title)
+		assert.equal("2019-03-01 13:00:00", r.review[1].taken)
 		assert.same(
 			{ albumsTotal = 3, albumsInRange = 2, flickrInRange = 5, matched = 3, review = 1, notInCatalog = 1 },
 			r.stats

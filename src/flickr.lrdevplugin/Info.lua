@@ -15,6 +15,7 @@ return {
 		{ title = "Flickr: Log in", file = "LoginMenuItem.lua" },
 		{ title = "Flickr: Check for photos deleted on Flickr…", file = "CheckDeletedMenuItem.lua" },
 		{ title = "Flickr: Link existing Flickr albums…", file = "ImportMenuItem.lua" },
+		{ title = "Flickr: Review unclear matches…", file = "ReviewMenuItem.lua" },
 	},
 
 	VERSION = { major = 0, minor = 1, revision = 0 },

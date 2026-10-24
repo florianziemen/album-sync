@@ -128,16 +128,7 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 	local api = FlickrApi.new(deps, creds, { token = creds.token, tokenSecret = creds.tokenSecret })
 	local service = CatalogState.publishService()
 
-	local queue = ReviewQueue.new(JsonFile.storage("review-" .. JsonFile.catalogKey() .. ".json"))
-	local items = {}
-	for i, item in ipairs(queue:items()) do
-		items[i] = item
-	end
-	if #items == 0 then
-		LrDialogs.message("Flickr: nothing to review", "There are no unclear matches for this catalog.", "info")
-		return
-	end
-
+	-- Repair stale Flickr ID fields first, also when there is nothing to review.
 	for _, ch in ipairs(CatalogState.repairFlickrIds()) do
 		log:info(
 			string.format(
@@ -148,6 +139,16 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: review unclear matches", fun
 			)
 		)
 	end
+	local queue = ReviewQueue.new(JsonFile.storage("review-" .. JsonFile.catalogKey() .. ".json"))
+	local items = {}
+	for i, item in ipairs(queue:items()) do
+		items[i] = item
+	end
+	if #items == 0 then
+		LrDialogs.message("Flickr: nothing to review", "There are no unclear matches for this catalog.", "info")
+		return
+	end
+
 	local records, photoByKey, linked, linkedIds = CatalogState.matcherRecords()
 	local recordByKey = {}
 	for _, r in ipairs(records) do

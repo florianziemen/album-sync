@@ -12,6 +12,8 @@ local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
 local LrLogger = import("LrLogger")
 
+local Disclaimer = require("Disclaimer")
+
 local log = LrLogger("album-sync")
 log:enable("logfile")
 
@@ -19,6 +21,9 @@ local FIELDS = { "flickrId", "flickrState", "imageFingerprint", "metadataFingerp
 
 LrFunctionContext.postAsyncTaskWithContext("Album Sync: forget link", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
+	if not Disclaimer.accept() then
+		return
+	end
 	local catalog = LrApplication.activeCatalog()
 	local photos = catalog:getTargetPhotos()
 	if #photos == 0 then

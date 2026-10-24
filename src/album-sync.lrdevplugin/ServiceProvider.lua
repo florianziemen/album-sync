@@ -26,6 +26,7 @@ local AlbumSync = require("AlbumSync")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
+local Disclaimer = require("Disclaimer")
 local FlickrApi = require("FlickrApi")
 local FlickrResponse = require("FlickrResponse")
 local Journal = require("Journal")
@@ -157,6 +158,7 @@ local function connect(publishSettings, need, deps)
 	if mixed and mixed.reason == "several" then
 		LrErrors.throwUserError("Album Sync: " .. mixed.message)
 	end
+	Disclaimer.require()
 	local creds = CredentialStore.account(publishSettings.lockedNsid)
 	local user, e = AccountGuard.verify(deps, creds, publishSettings.lockedNsid, need)
 	if not user then

@@ -27,6 +27,7 @@ local AlbumSync = require("AlbumSync")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
+local Disclaimer = require("Disclaimer")
 local FlickrApi = require("FlickrApi")
 local FlickrResponse = require("FlickrResponse")
 local JsonFile = require("JsonFile")
@@ -185,6 +186,9 @@ end
 
 LrFunctionContext.postAsyncTaskWithContext("Album Sync: review unclear matches", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
+	if not Disclaimer.accept() then
+		return
+	end
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
 

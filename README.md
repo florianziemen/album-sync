@@ -16,8 +16,11 @@ Album Sync is a Lightroom Classic publish service for Flickr that is built to su
 - **Virtual copies** are handled as separate photos, and every upload carries a marker that identifies it exactly later.
 - **Never deletes on Flickr** unless you explicitly choose to (re-upload without Pro, "delete the old photo").
 
-This product uses the Flickr API but is not endorsed or certified by SmugMug, Inc.
-Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugMug, Inc. This project is not affiliated with either.
+## Disclaimer
+
+**Use at your own risk.** Album Sync is free software, provided "as is" without warranty of any kind (see [LICENSE](LICENSE)). It uploads photos to Flickr, changes their titles, descriptions, tags, privacy, location and albums, and writes to your Lightroom catalog. Bugs, changes of the Flickr API or wrong settings can lead to lost, duplicated, mislabelled or unintentionally public photos. There is no guarantee for your photos or data: keep backups of your catalog and originals. The plugin asks you to accept this once before it does anything.
+
+Album Sync is an independent project, not affiliated with, endorsed or supported by Adobe Inc. or SmugMug, Inc. (Flickr). This product uses the Flickr API but is not endorsed or certified by SmugMug, Inc. Adobe and Lightroom are trademarks of Adobe Inc.; Flickr is a trademark of SmugMug, Inc.
 
 ## Requirements
 

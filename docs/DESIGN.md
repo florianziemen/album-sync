@@ -64,6 +64,7 @@ src/album-sync.lrdevplugin/
   AppDeps.lua                 dependencies for core modules (HTTP, time, log, tasks)
   HttpTransport.lua           LrHttp: requests, multipart upload, remote file size
   CredentialStore.lua         API key and per-account tokens (LrPasswords), account list (LrPrefs)
+  Disclaimer.lua              disclaimer accepted once (LrPrefs) before any entry point acts
   CatalogState.lua            plugin fields, catalog queries, linking, repair
   PhotoRenderer.lua           just-in-time rendering, upload marker
   JsonFile.lua                JSON files in Lightroom's app-support folder

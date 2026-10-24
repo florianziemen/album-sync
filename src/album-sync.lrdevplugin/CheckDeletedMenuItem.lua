@@ -15,6 +15,7 @@ local AccountGuard = require("AccountGuard")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
+local Disclaimer = require("Disclaimer")
 local FlickrApi = require("FlickrApi")
 local FlickrResponse = require("FlickrResponse")
 local RateLimiter = require("RateLimiter")
@@ -30,6 +31,9 @@ end
 
 LrFunctionContext.postAsyncTaskWithContext("Album Sync: check for deleted photos", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
+	if not Disclaimer.accept() then
+		return
+	end
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)
 	local nsid, e = AccountGuard.catalogAccount(CatalogState.lockedAccounts())

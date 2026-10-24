@@ -21,6 +21,7 @@ local AlbumSync = require("AlbumSync")
 local AppDeps = require("AppDeps")
 local CatalogState = require("CatalogState")
 local CredentialStore = require("CredentialStore")
+local Disclaimer = require("Disclaimer")
 local FlickrApi = require("FlickrApi")
 local FlickrIndex = require("FlickrIndex")
 local FlickrResponse = require("FlickrResponse")
@@ -133,6 +134,9 @@ end
 
 LrFunctionContext.postAsyncTaskWithContext("Album Sync: link existing albums", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
+	if not Disclaimer.accept() then
+		return
+	end
 	local catalog = LrApplication.activeCatalog()
 	local deps = AppDeps()
 	deps.limiter = RateLimiter.new(deps)

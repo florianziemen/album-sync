@@ -14,6 +14,7 @@ local LrLogger = import("LrLogger")
 local LrView = import("LrView")
 
 local CredentialStore = require("CredentialStore")
+local Disclaimer = require("Disclaimer")
 local FlickrAuth = require("FlickrAuth")
 local FlickrResponse = require("FlickrResponse")
 local AppDeps = require("AppDeps")
@@ -96,6 +97,9 @@ end
 
 LrFunctionContext.postAsyncTaskWithContext("Flickr login", function(context)
 	LrDialogs.attachErrorDialogToFunctionContext(context)
+	if not Disclaimer.accept() then
+		return
+	end
 
 	local creds = askCredentials(context, CredentialStore.app())
 	if not creds then

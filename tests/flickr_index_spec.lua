@@ -126,6 +126,18 @@ describe("FlickrIndex.albums", function()
 		assert.is_false(again[2].fromCache)
 	end)
 
+	it("skips albums unchanged since before the range", function()
+		local api = fakeApi(
+			{ { id = "Old", updated = 100 }, { id = "New", updated = 300 } },
+			{ New = { { id = "1", taken = "2019-01-01 00:00:00" } } }
+		)
+		local albums = FlickrIndex.albums(api, FlickrIndex.Cache.new(memoryStorage()), nil, 200)
+		assert.same({ "New" }, api.fetched)
+		assert.is_true(albums[1].skipped)
+		assert.same({}, albums[1].photos)
+		assert.is_nil(albums[2].skipped)
+	end)
+
 	it("filters by date range and groups by year", function()
 		local a = {
 			id = "A",

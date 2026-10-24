@@ -158,15 +158,26 @@ LrFunctionContext.postAsyncTaskWithContext("Flickr: link existing albums", funct
 	log:info(string.format("import: %d catalog photos, range %s .. %s", #records, range.min, range.max))
 
 	local cache = FlickrIndex.Cache.new(JsonFile.storage("albums-" .. nsid:gsub("[^%w]", "_") .. ".json"))
+	-- Albums untouched since before the catalog's first photo cannot contain its photos.
+	-- 2 days of slack for time zones (taken dates are wall clock) and camera clocks.
+	local updatedSince = FlickrIndex.toSeconds(range.min) - 2 * 86400
 	local albums
 	albums, e = FlickrIndex.albums(api, cache, function(i, n, album)
 		progress:setCaption(string.format("Reading album %d of %d: %s", i, n, album.title))
 		progress:setPortionComplete(i, n)
-	end)
+	end, updatedSince)
 	if not albums then
 		progress:done()
 		return fatal(FlickrResponse.describe(e))
 	end
+	local skipped, cached = 0, 0
+	for _, a in ipairs(albums) do
+		skipped = skipped + (a.skipped and 1 or 0)
+		cached = cached + (a.fromCache and 1 or 0)
+	end
+	log:info(
+		string.format("import: %d albums, %d from cache, %d skipped (unchanged before range)", #albums, cached, skipped)
+	)
 	progress:setCaption("Reading photos taken in this catalog's range…")
 	local photostream
 	photostream, e = FlickrIndex.photosTaken(api, range.min, range.max, function(n)

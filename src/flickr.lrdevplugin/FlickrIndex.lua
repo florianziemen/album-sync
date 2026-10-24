@@ -153,10 +153,13 @@ end
 
 --[[
 All albums with photos, using the cache for albums whose date_update did not change.
-Returns array of { id, title, count, updated, photos, newest, year, fromCache } or nil, err.
-progress(i, n, album) is called per album.
+updatedSince (unix, optional): albums last changed before it cannot contain photos taken
+after it (a photo is added to an album after it was taken), so their photos are not fetched
+(album.skipped = true, photos = {}).
+Returns array of { id, title, count, updated, photos, newest, year, fromCache, skipped }
+or nil, err. progress(i, n, album) is called per album.
 ]]
-function M.albums(api, cache, progress)
+function M.albums(api, cache, progress, updatedSince)
 	local list, e = api:albums()
 	if not list then
 		return nil, e
@@ -169,7 +172,10 @@ function M.albums(api, cache, progress)
 		end
 		local photos = cache:get(album.id, album.updated)
 		album.fromCache = photos ~= nil
-		if not photos then
+		if not photos and updatedSince and album.updated and album.updated < updatedSince then
+			album.skipped = true
+			photos = {}
+		elseif not photos then
 			local fetchErr
 			photos, fetchErr = api:albumPhotos(album.id)
 			if not photos then

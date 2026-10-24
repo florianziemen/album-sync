@@ -108,7 +108,7 @@ Per batch, in `processRenderedPhotos`:
 | Found on Flickr | Link it; do not re-upload. |
 | Not found | Drop the entry; the photo is uploaded normally. |
 
-## 5a. Robust upload (implemented)
+## 5a. Robust upload (implemented, verified in LrC 2026-10-24)
 
 - **Async upload** (`Uploader.lua`): `async=1` returns a ticket, and `checkTickets` is polled with backoff (1 s up to 15 s, at most 300 s).
   - A ticket still processing at timeout is **not** re-uploaded. The journal keeps it, and the next publish links it; until then the photo is held back (`waitPending`).
@@ -127,6 +127,14 @@ Per batch, in `processRenderedPhotos`:
   - network error before sending → retry;
   - response lost after upload → found by search, no duplicate;
   - crash after upload, before saving → the next publish reconciles via the journal and relinks.
+
+**Results (dummy account, about 11 MB JPEGs):**
+- Sequential: 10 photos in 52 s. 3 parallel: 10 photos in 32 s (1.6×). LR accepts `recordPublishedPhotoId` in completion order.
+- All three injected faults recovered without duplicates. After the crash fault, the in-flight second upload finished in the background, and both photos were linked via the journal on the next run.
+
+**Open improvements:**
+- Poll all open tickets in one `checkTickets` call: per-worker polling consumes the rate limit, and album adds waited up to 2.8 s.
+- Skip the duplicate search for network errors that prove nothing was sent (for example "connection refused"). Today every transient upload error waits for up to 3 searches (about 15 s) before retrying.
 
 ## 6. Change detection (fingerprints)
 

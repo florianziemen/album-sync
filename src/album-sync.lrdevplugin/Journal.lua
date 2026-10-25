@@ -4,6 +4,14 @@ Persistent upload journal (docs/DESIGN.md §5 "Resume").
 An entry is opened *before* an upload is sent and closed only after the Flickr id is stored in
 the catalog. Whatever is left open after a crash or quit is reconciled on the next publish.
 Keyed by LR photo uuid. Storage is injected: { load() -> string|nil, save(string) }.
+
+Parallel upload tasks share one journal and storage.save yields in Lightroom, so saves are
+serialized: a save waits for the one in progress, then writes the latest state (or returns if
+that write already covered it).
+
+Dependencies (only needed when saves can overlap):
+  sleep(seconds)   yield while another save is in progress
+  pcall            LrTasks.pcall in Lightroom
 ]]
 
 local json = require("json")
@@ -11,8 +19,14 @@ local json = require("json")
 local M = {}
 M.__index = M
 
-function M.new(storage)
-	local self = setmetatable({ storage = storage, data = { version = 1, entries = {} } }, M)
+function M.new(storage, deps)
+	local self = setmetatable({
+		storage = storage,
+		deps = deps or {},
+		data = { version = 1, entries = {} },
+		requested = 0,
+		written = 0,
+	}, M)
 	local raw = storage.load()
 	if raw and raw ~= "" then
 		local ok, decoded = pcall(json.decode, raw)
@@ -26,7 +40,22 @@ function M.new(storage)
 end
 
 function M:_save()
-	self.storage.save(json.encode(self.data))
+	self.requested = self.requested + 1
+	local mine = self.requested
+	while self.saving do
+		self.deps.sleep(0.02)
+	end
+	if self.written >= mine then
+		return
+	end
+	self.saving = true
+	local covers = self.requested
+	local ok, err = (self.deps.pcall or pcall)(self.storage.save, json.encode(self.data))
+	self.saving = false
+	if not ok then
+		error(err, 0)
+	end
+	self.written = covers
 end
 
 --- Start an entry (overwrites a stale one for the same key).

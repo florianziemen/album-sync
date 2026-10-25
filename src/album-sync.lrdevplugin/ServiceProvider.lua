@@ -889,7 +889,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local faultMode = debugMode and settings.faultMode or "none"
 	local user, api, creds = connect(settings, dryRun and "read" or "write", deps)
 
-	local journal = Journal.new(JsonFile.storage("journal-" .. JsonFile.catalogKey() .. ".json"))
+	local journal = Journal.new(JsonFile.storage("journal-" .. JsonFile.catalogKey() .. ".json"), deps)
 	if journal.corrupt then
 		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
 	end

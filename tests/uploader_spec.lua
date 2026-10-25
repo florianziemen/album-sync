@@ -81,6 +81,65 @@ describe("Journal", function()
 		assert.equal("{not json", j.corrupt)
 		assert.same({}, j:openEntries())
 	end)
+
+	it("serializes overlapping saves and writes the latest state last", function()
+		local store, active, peak = {}, 0, 0
+		local storage = {
+			load = function() end,
+			save = function(s)
+				active = active + 1
+				peak = math.max(peak, active)
+				coroutine.yield() -- LrFileUtils yields mid-save
+				store.value = s
+				active = active - 1
+			end,
+		}
+		-- Plain pcall cannot span a yield in Lua 5.1 (Lightroom injects LrTasks.pcall).
+		local function yieldSafePcall(fn, ...)
+			return true, fn(...)
+		end
+		local j = Journal.new(storage, { sleep = coroutine.yield, pcall = yieldSafePcall })
+		local tasks = {}
+		for i = 1, 3 do
+			tasks[i] = coroutine.create(function()
+				j:open("u" .. i, { n = i })
+			end)
+		end
+		local alive = true
+		while alive do
+			alive = false
+			for _, co in ipairs(tasks) do
+				if coroutine.status(co) ~= "dead" then
+					assert(coroutine.resume(co))
+					alive = true
+				end
+			end
+		end
+		assert.equal(1, peak)
+		assert.equal(3, #Journal.new({
+			load = function()
+				return store.value
+			end,
+		}):openEntries())
+	end)
+
+	it("releases the save lock when storage fails", function()
+		local fail = true
+		local j = Journal.new({
+			load = function() end,
+			save = function()
+				if fail then
+					error("disk full", 0)
+				end
+			end,
+		})
+		assert.has_error(function()
+			j:open("u1", {})
+		end, "disk full")
+		fail = false
+		j:open("u2", {})
+		assert.is_falsy(j.saving)
+	end)
 end)
 
 describe("Uploader", function()

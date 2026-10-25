@@ -81,6 +81,113 @@ describe("Journal", function()
 		assert.equal("{not json", j.corrupt)
 		assert.same({}, j:openEntries())
 	end)
+
+	it("serializes overlapping saves and writes the latest state last", function()
+		local store, active, peak = {}, 0, 0
+		local storage = {
+			load = function() end,
+			save = function(s)
+				active = active + 1
+				peak = math.max(peak, active)
+				coroutine.yield() -- LrFileUtils yields mid-save
+				store.value = s
+				active = active - 1
+			end,
+		}
+		-- Plain pcall cannot span a yield in Lua 5.1 (Lightroom injects LrTasks.pcall).
+		local function yieldSafePcall(fn, ...)
+			return true, fn(...)
+		end
+		local j = Journal.new(storage, { sleep = coroutine.yield, pcall = yieldSafePcall })
+		local tasks = {}
+		for i = 1, 3 do
+			tasks[i] = coroutine.create(function()
+				j:open("u" .. i, { n = i })
+			end)
+		end
+		local alive = true
+		while alive do
+			alive = false
+			for _, co in ipairs(tasks) do
+				if coroutine.status(co) ~= "dead" then
+					assert(coroutine.resume(co))
+					alive = true
+				end
+			end
+		end
+		assert.equal(1, peak)
+		assert.equal(3, #Journal.new({
+			load = function()
+				return store.value
+			end,
+		}):openEntries())
+	end)
+
+	it("releases the save lock when storage fails", function()
+		local fail = true
+		local j = Journal.new({
+			load = function() end,
+			save = function()
+				if fail then
+					error("disk full", 0)
+				end
+			end,
+		})
+		assert.has_error(function()
+			j:open("u1", {})
+		end, "disk full")
+		fail = false
+		j:open("u2", {})
+		assert.is_falsy(j.saving)
+	end)
+end)
+
+describe("Journal leases", function()
+	local function keys(items)
+		local out = {}
+		for _, item in ipairs(items) do
+			out[#out + 1] = item.key
+		end
+		return out
+	end
+
+	it("share one file and keep each other's entries", function()
+		local storage = memoryStorage()
+		local j = Journal.new(storage)
+		local a, b = j:lease(), j:lease()
+		a:open("u1", { n = 1 })
+		b:open("u2", { n = 2 })
+		assert.same({ "u1", "u2" }, keys(Journal.new(storage):openEntries()))
+	end)
+
+	it("do not reconcile or reopen what another run is uploading", function()
+		local j = Journal.new(memoryStorage())
+		local a, b = j:lease(), j:lease()
+		assert.truthy(a:open("u1", {}))
+		assert.same({}, b:claimStale())
+		assert.same({ u1 = true }, b:busyKeys())
+		assert.same({}, a:busyKeys())
+		assert.is_nil(b:open("u1", {}))
+		assert.truthy(a:open("u1", {})) -- same run may reopen
+	end)
+
+	it("let one run claim stale entries and hand them back on release", function()
+		local j = Journal.new(memoryStorage('{"version":1,"entries":{"old":{"title":"x"}}}'))
+		local a, b = j:lease(), j:lease()
+		assert.same({ "old" }, keys(a:claimStale()))
+		assert.same({}, b:claimStale())
+		a:release()
+		assert.same({ "old" }, keys(b:claimStale()))
+	end)
+
+	it("free a key when its entry is closed", function()
+		local j = Journal.new(memoryStorage())
+		local a, b = j:lease(), j:lease()
+		a:open("u1", {})
+		a:close("u1")
+		assert.same({}, b:busyKeys())
+		assert.truthy(b:open("u1", {}))
+	end)
 end)
 
 describe("Uploader", function()
@@ -121,6 +228,18 @@ describe("Uploader", function()
 		assert.equal("P2", up:upload("u1", "/x.jpg", FIELDS))
 		assert.equal(2, count(api.calls, "uploadAsync"))
 		assert.equal(Uploader.RECENT_CHECKS, count(api.calls, "recentUploads"))
+	end)
+
+	it("does not upload a photo another run is uploading", function()
+		local journal = Journal.new(memoryStorage())
+		local other = journal:lease()
+		other:open("u1", { title = "IMG_1" })
+		local api = fakeApi({})
+		local id, e = Uploader.new(deps(), api, journal:lease()):upload("u1", "/x.jpg", FIELDS)
+		assert.is_nil(id)
+		assert.equal("busy", e.class)
+		assert.same({}, api.calls)
+		assert.is_not_nil(journal:get("u1"))
 	end)
 
 	it("stops on ambiguous candidates and keeps the journal entry", function()

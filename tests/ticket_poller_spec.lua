@@ -114,7 +114,9 @@ describe("not-sent errors", function()
 			end,
 		}
 		local journal = {
-			open = function() end,
+			open = function()
+				return {}
+			end,
 			update = function() end,
 			close = function() end,
 		}

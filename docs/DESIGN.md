@@ -122,7 +122,7 @@ Per batch, in `processRenderedPhotos`:
 - **Async upload** (`Uploader.lua`): `async=1` returns a ticket, and `checkTickets` is polled with backoff (1 s up to 15 s, at most 300 s).
   - A ticket still processing at timeout is **not** re-uploaded. The journal keeps it, and the next publish links it; until then the photo is held back (`waitPending`).
   - Complete=2 (Flickr could not process the file) is a permanent failure.
-- **Journal** (`Journal.lua`, `JsonFile.lua`): one JSON file per catalog in LR's app-support folder (`album-sync/journal-<catalog hash>.json`), written atomically.
+- **Journal** (`Journal.lua`, `JsonFile.lua`): one JSON file per catalog in LR's app-support folder (`album-sync/journal-<catalog hash>.json`), written atomically. Saves are serialized (parallel uploads share the journal). Concurrent publish runs share one in-memory journal per catalog, each through a lease: entries a run is uploading or reconciling are skipped by the others' reconciliation, and their photos are held back (`waitPending`) instead of uploaded twice.
   - An entry (keyed by photo uuid, holding title and start time) is written *before* sending, then gets the ticket and later the photo ID. It is closed only after the ID is stored in the catalog.
   - At the start of every publish, open entries are reconciled: by photo ID, by ticket, or else by searching own uploads since the attempt started. Found photos get `flickrId` and are then relinked by the planner. Photos not found are dropped. Several candidates mean `ambiguous`: the photo is held back and the candidates are logged.
 - **Duplicate-safe retries:**

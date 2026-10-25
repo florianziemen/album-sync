@@ -103,7 +103,9 @@ Returns photoId or nil, err.
 function M:upload(key, path, fields, opts)
 	opts = opts or {}
 	local started = self.deps.now()
-	self.journal:open(key, { title = fields.title, started = started })
+	if not self.journal:open(key, { title = fields.title, started = started }) then
+		return nil, { class = "busy", message = "Another publish run is uploading this photo; publish again later." }
+	end
 
 	local function attempt()
 		local fault = opts.fault and opts.fault("beforeSend")
@@ -179,7 +181,7 @@ caller after storing the id.
 function M:reconcile()
 	local result = { linked = {}, pending = {}, dropped = {}, ambiguous = {} }
 	local lost = {}
-	for _, item in ipairs(self.journal:openEntries()) do
+	for _, item in ipairs(self.journal:claimStale()) do
 		local key, entry = item.key, item.entry
 		local photoId = entry.photoId
 		if not photoId and entry.ticket then

@@ -9,6 +9,10 @@ Parallel upload tasks share one journal and storage.save yields in Lightroom, so
 serialized: a save waits for the one in progress, then writes the latest state (or returns if
 that write already covered it).
 
+Concurrent publish runs share one journal per catalog, each through its own lease (M:lease()).
+A lease marks the entries it opened or claimed for reconciliation as live; other leases neither
+reconcile nor reopen them.
+
 Dependencies (only needed when saves can overlap):
   sleep(seconds)   yield while another save is in progress
   pcall            LrTasks.pcall in Lightroom
@@ -26,6 +30,7 @@ function M.new(storage, deps)
 		data = { version = 1, entries = {} },
 		requested = 0,
 		written = 0,
+		live = {}, -- key -> lease currently uploading or reconciling it
 	}, M)
 	local raw = storage.load()
 	if raw and raw ~= "" then
@@ -82,6 +87,7 @@ function M:update(key, fields)
 end
 
 function M:close(key)
+	self.live[key] = nil
 	if self.data.entries[key] then
 		self.data.entries[key] = nil
 		self:_save()
@@ -92,16 +98,96 @@ function M:get(key)
 	return self.data.entries[key]
 end
 
---- Open entries as array of { key, entry }, sorted by key.
-function M:openEntries()
+local function sortedEntries(entries, keep)
 	local out = {}
-	for key, entry in pairs(self.data.entries) do
-		out[#out + 1] = { key = key, entry = entry }
+	for key, entry in pairs(entries) do
+		if keep(key) then
+			out[#out + 1] = { key = key, entry = entry }
+		end
 	end
 	table.sort(out, function(a, b)
 		return a.key < b.key
 	end)
 	return out
+end
+
+--- Open entries as array of { key, entry }, sorted by key.
+function M:openEntries()
+	return sortedEntries(self.data.entries, function()
+		return true
+	end)
+end
+
+--- Without leases every open entry is left over from an earlier run.
+function M:claimStale()
+	return self:openEntries()
+end
+
+local Lease = {}
+Lease.__index = Lease
+
+--- A view of the journal for one publish run (same interface as the journal).
+function M:lease()
+	return setmetatable({ journal = self }, Lease)
+end
+
+--- Returns nil if another lease is uploading `key`.
+function Lease:open(key, fields)
+	local owner = self.journal.live[key]
+	if owner and owner ~= self then
+		return nil
+	end
+	self.journal.live[key] = self
+	return self.journal:open(key, fields)
+end
+
+function Lease:update(key, fields)
+	return self.journal:update(key, fields)
+end
+
+function Lease:close(key)
+	self.journal:close(key)
+end
+
+function Lease:get(key)
+	return self.journal:get(key)
+end
+
+--- Open entries no lease is working on (left over from an interrupted run).
+function Lease:staleEntries()
+	local live = self.journal.live
+	return sortedEntries(self.journal.data.entries, function(key)
+		return live[key] == nil
+	end)
+end
+
+--- staleEntries(), claimed by this lease so that other runs leave them alone.
+function Lease:claimStale()
+	local out = self:staleEntries()
+	for _, item in ipairs(out) do
+		self.journal.live[item.key] = self
+	end
+	return out
+end
+
+--- Keys another lease is uploading or reconciling (set).
+function Lease:busyKeys()
+	local out = {}
+	for key, owner in pairs(self.journal.live) do
+		if owner ~= self then
+			out[key] = true
+		end
+	end
+	return out
+end
+
+--- Hand back everything this lease holds; entries still open become stale.
+function Lease:release()
+	for key, owner in pairs(self.journal.live) do
+		if owner == self then
+			self.journal.live[key] = nil
+		end
+	end
 end
 
 return M

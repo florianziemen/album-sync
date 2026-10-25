@@ -51,6 +51,9 @@ local RENDER_AHEAD = 2
 local log = LrLogger("album-sync")
 log:enable("logfile")
 
+-- One journal per catalog, shared by concurrent publish runs (each takes a lease).
+local journals = {}
+
 -- One structured log line per event: "PUBLISH t=... ev=... k=v ...".
 local function event(name, fields)
 	local parts = { string.format("PUBLISH t=%.3f ev=%s", LrDate.currentTime(), name) }
@@ -614,7 +617,9 @@ local function execute(ctx, entry, path)
 		e = replaceErr
 	end
 	if e then
-		if e.class == "pending" then
+		if e.class == "busy" then
+			return nil, e.message
+		elseif e.class == "pending" then
 			return nil, e.message .. " It will be linked on the next publish."
 		end
 		return nil, FlickrResponse.describe(e)
@@ -842,9 +847,6 @@ end
 -- Returns sets of uuids that must not be uploaded again in this run: pending, ambiguous.
 local function reconcileJournal(uploader, journal)
 	local blocked = { pending = {}, ambiguous = {} }
-	if #journal:openEntries() == 0 then
-		return blocked
-	end
 	local r = uploader:reconcile()
 	local linked = 0
 	for uuid, photoId in pairs(r.linked) do
@@ -889,20 +891,33 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local faultMode = debugMode and settings.faultMode or "none"
 	local user, api, creds = connect(settings, dryRun and "read" or "write", deps)
 
-	local journal = Journal.new(JsonFile.storage("journal-" .. JsonFile.catalogKey() .. ".json"), deps)
-	if journal.corrupt then
-		log:error("journal was unreadable and has been reset; contents: " .. tostring(journal.corrupt))
+	local catalogKey = JsonFile.catalogKey()
+	if not journals[catalogKey] then
+		journals[catalogKey] = Journal.new(JsonFile.storage("journal-" .. catalogKey .. ".json"), deps)
+		if journals[catalogKey].corrupt then
+			log:error("journal was unreadable and has been reset; contents: " .. tostring(journals[catalogKey].corrupt))
+		end
 	end
+	local journal = journals[catalogKey]:lease()
+	functionContext:addCleanupHandler(function()
+		journal:release()
+	end)
 	-- One ticket poll for all parallel uploads (saves API calls).
 	local uploader = Uploader.new(deps, api, journal, TicketPoller.new(api, deps))
 	local blocked = { pending = {}, ambiguous = {} }
-	if not dryRun and #journal:openEntries() > 0 then
+	local stale = #journal:staleEntries()
+	if not dryRun and stale > 0 then
 		local scope = LrProgressScope({
-			title = string.format("Album Sync: checking %d interrupted upload(s)…", #journal:openEntries()),
+			title = string.format("Album Sync: checking %d interrupted upload(s)…", stale),
 			functionContext = functionContext,
 		})
 		blocked = reconcileJournal(uploader, journal)
+		journal:release() -- still pending or ambiguous: the next run checks them again
 		scope:done()
+	end
+	-- Photos another publish run is uploading or reconciling right now.
+	for key in pairs(journal:busyKeys()) do
+		blocked.pending[key] = true
 	end
 
 	local renderSettings = PhotoRenderer.copySettings(settings)
@@ -1064,7 +1079,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			fail(
 				rendition,
 				entry,
-				"An earlier upload of this photo is still being processed by Flickr; publish again later."
+				"An earlier upload of this photo is still in progress (on Flickr or in another publish run); publish again later."
 			)
 		elseif entry.action == "ambiguous" then
 			fail(

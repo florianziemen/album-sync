@@ -38,6 +38,7 @@ local Privacy = require("Privacy")
 local RemoteState = require("RemoteState")
 local json = require("json")
 local JpegXmp = require("JpegXmp")
+local KeptChanges = require("KeptChanges")
 local PublishPlanner = require("PublishPlanner")
 local RateLimiter = require("RateLimiter")
 local RenderQueue = require("RenderQueue")
@@ -696,13 +697,21 @@ local function askConflicts(functionContext, conflicted)
 	return result == "ok" and props.choice or "skip"
 end
 
+-- File name for dialogs (no paths); nil if Lightroom cannot tell.
+local function fileName(photo)
+	local ok, name = LrTasks.pcall(function()
+		return photo:getFormattedMetadata("fileName")
+	end)
+	return ok and name or nil
+end
+
 --[[
 Compare Lightroom and Flickr per field for every photo whose metadata changed (docs/DESIGN.md
 §3 "Conflicts"). Reads Flickr's current values (album listing: 500 per call; else getInfo),
 then sets entry.push (fields to send), entry.remote and entry.flickrOnly; asks once for all
-conflicts. Returns the number of photos with Flickr-only changes (kept).
+conflicts. Returns the Flickr-only changes (kept) as KeptChanges items.
 ]]
-local function syncMetadata(functionContext, api, entries, album)
+local function syncMetadata(functionContext, api, user, entries, album)
 	local todo = {}
 	for _, entry in ipairs(entries) do
 		if needsSync(entry) then
@@ -710,13 +719,13 @@ local function syncMetadata(functionContext, api, entries, album)
 		end
 	end
 	if #todo == 0 then
-		return 0
+		return {}
 	end
 	local listed = {}
 	if album and album.id and #todo >= 3 then
 		listed = api:albumPhotoStates(album.id) or {}
 	end
-	local conflicted, flickrOnly = {}, 0
+	local conflicted, kept = {}, {}
 	for _, entry in ipairs(todo) do
 		local id = tostring(entry.publishedId or entry.flickrId)
 		local remote
@@ -745,7 +754,16 @@ local function syncMetadata(functionContext, api, entries, album)
 				entry.conflicts = d.conflicts
 				conflicted[#conflicted + 1] = entry
 			end
+			local file = next(d.flickrOnly) and fileName(entry.photo)
 			for _, f in ipairs(RemoteState.names(d.flickrOnly)) do
+				kept[#kept + 1] = {
+					file = file,
+					id = id,
+					url = PhotoFields.photoUrl(user.id, id),
+					field = f,
+					flickr = remote[f],
+					lightroom = entry.norm[f],
+				}
 				log:info(
 					string.format(
 						"sync %s: %s changed on Flickr, kept (Flickr %q, Lightroom %q)",
@@ -755,9 +773,6 @@ local function syncMetadata(functionContext, api, entries, album)
 						tostring(entry.norm[f])
 					)
 				)
-			end
-			if next(d.flickrOnly) then
-				flickrOnly = flickrOnly + 1
 			end
 			event("sync", {
 				id = id,
@@ -793,7 +808,7 @@ local function syncMetadata(functionContext, api, entries, album)
 			end
 		end
 	end
-	return flickrOnly
+	return kept
 end
 
 -- Make sure a photo new to this collection is in its album. Re-uploads already took over the
@@ -821,10 +836,70 @@ end
 
 -- Identifies a photo in log lines (no paths).
 local function photoLabel(photo)
-	local ok, name = LrTasks.pcall(function()
-		return photo:getFormattedMetadata("fileName")
+	return string.format("%s (localId=%s)", tostring(fileName(photo) or "?"), tostring(photo.localIdentifier))
+end
+
+-- Save the kept-changes list as CSV where the user chooses (the path is not logged).
+local function saveKeptCsv(kept)
+	LrTasks.startAsyncTask(function()
+		local path = LrDialogs.runSavePanel({
+			title = "Album Sync: save the list of values kept on Flickr",
+			requiredFileType = "csv",
+			canCreateDirectories = true,
+		})
+		if not path then
+			return
+		end
+		local err
+		local fh, openErr = io.open(path, "wb")
+		if not fh then
+			err = openErr
+		else
+			local ok, writeErr = fh:write(KeptChanges.toCsv(kept))
+			fh:close()
+			err = (not ok) and (writeErr or "write failed") or nil
+		end
+		if err then
+			err = tostring(err):gsub(path:gsub("%p", "%%%0"), "<file>")
+			log:error("saving the kept-values CSV failed: " .. err)
+			LrDialogs.message("Album Sync: could not save the list", err, "critical")
+		end
 	end)
-	return string.format("%s (localId=%s)", ok and tostring(name) or "?", tostring(photo.localIdentifier))
+end
+
+-- End-of-publish summary: fields where Flickr differs and Lightroom did not change (kept).
+local function showKept(kept)
+	local f = LrView.osFactory()
+	local lines = KeptChanges.lines(kept)
+	LrDialogs.presentModalDialog({
+		title = "Album Sync: values on Flickr were kept",
+		contents = f:column({
+			spacing = f:control_spacing(),
+			UiText.wrapped(
+				f,
+				string.format(
+					"%d photo(s) have values on Flickr (title, description, tags, privacy or location) that "
+						.. "differ from Lightroom, and Lightroom did not change them since the last publish. "
+						.. "Flickr's values were kept.",
+					KeptChanges.photoCount(kept)
+				),
+				100
+			),
+			f:scrolled_view({
+				width = 760,
+				height = 320,
+				f:static_text({ title = table.concat(lines, "\n"), height_in_lines = #lines }),
+			}),
+			f:push_button({
+				title = "Save as CSV…",
+				action = function()
+					saveKeptCsv(kept)
+				end,
+			}),
+		}),
+		actionVerb = "OK",
+		cancelVerb = "< exclude >",
+	})
 end
 
 local function fail(rendition, entry, message)
@@ -979,7 +1054,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 		publishedCollection = exportContext.publishedCollection,
 		hideFromSearch = settings.hideFromSearch ~= false,
 	}
-	local flickrOnly = syncMetadata(functionContext, api, entries, album)
+	local kept = syncMetadata(functionContext, api, user, entries, album)
 
 	-- Lightroom side of a finished action; always on this (the publish) task.
 	local function finish(rendition, entry, remoteId, err)
@@ -1107,17 +1182,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	end
 	finishResults(pool:drain())
 	LrFileUtils.delete(folder)
-	event("end", { n = #entries, flickrOnly = flickrOnly })
-	if flickrOnly > 0 then
-		LrDialogs.message(
-			"Album Sync: changes made on Flickr were kept",
-			string.format(
-				"%d photo(s) have changes made on Flickr (title, description, tags, privacy or location) that "
-					.. "Lightroom does not have. They were not overwritten. Details are in album-sync.log.",
-				flickrOnly
-			),
-			"info"
-		)
+	event("end", { n = #entries, flickrOnly = KeptChanges.photoCount(kept) })
+	if #kept > 0 then
+		showKept(kept)
 	end
 end
 

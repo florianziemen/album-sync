@@ -192,7 +192,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
      | Changed in LR | Changed on Flickr | Result |
      |---|---|---|
      | yes | no | push |
-     | no | yes | keep Flickr's value, log it, show a summary dialog |
+     | no | yes | keep Flickr's value, log it, list it in the end-of-publish dialog (scrollable, "Save as CSV…"; `KeptChanges.lua`) |
      | yes | yes | conflict |
 
   4. Conflicts are asked once per batch: skip (the default), Lightroom wins, or keep Flickr's values.

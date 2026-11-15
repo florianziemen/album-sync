@@ -22,6 +22,14 @@ function M.title(meta)
 	return ((meta.fileName or ""):gsub("%.[^.]*$", ""))
 end
 
+--- The file name when the photo has no LR title (its title is derived from the name), else nil.
+function M.untitledFileName(meta)
+	if blank(meta.title) and not blank(meta.fileName) then
+		return meta.fileName
+	end
+	return nil
+end
+
 --[[
 Flickr tag string from LR's exportable keywords ("a, b, New York").
 Space separated; multi-word tags quoted; duplicates (case-insensitive) dropped; order kept.

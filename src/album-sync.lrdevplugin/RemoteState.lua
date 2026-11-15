@@ -119,18 +119,33 @@ function M.fromListEntry(p)
 	}
 end
 
+local function stripExt(s)
+	return (trim(s):gsub("%.[%w]+$", ""))
+end
+
+--[[
+True when Flickr's title is just the file name (any extension) of a photo without LR title
+(opts.untitledFileName). Such a title is Flickr's or an uploader's default, not an edit.
+]]
+local function defaultTitle(remote, opts)
+	local name = opts and opts.untitledFileName
+	return name ~= nil and stripExt(remote.title) == stripExt(name)
+end
+
 --[[
 Decide per field. current: fromFields(LR now). state: stored { lr, sent } or nil.
 remote: Flickr now. fields: set of field names to manage (location only when enabled).
+opts.untitledFileName: the file name when the photo has no LR title (PhotoFields.untitledFileName);
+a Flickr title equal to it, with or without extension, counts as unchanged.
 Returns { push = set, conflicts = set, flickrOnly = set }:
   push        changed in Lightroom only (or no history at all) -> send
   conflicts   changed in Lightroom and on Flickr since the last sync
   flickrOnly  differs on Flickr while Lightroom did not change -> keep Flickr's value
 ]]
-function M.diff(current, state, remote, fields)
+function M.diff(current, state, remote, fields, opts)
 	local r = { push = {}, conflicts = {}, flickrOnly = {} }
 	for _, f in ipairs(M.FIELDS) do
-		if fields[f] and current[f] ~= remote[f] then
+		if fields[f] and current[f] ~= remote[f] and not (f == "title" and defaultTitle(remote, opts)) then
 			local lrChanged = not (state and state.lr) or current[f] ~= state.lr[f]
 			local flickrChanged = state and state.sent and remote[f] ~= state.sent[f]
 			if lrChanged and flickrChanged then

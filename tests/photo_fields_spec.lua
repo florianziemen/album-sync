@@ -7,6 +7,12 @@ describe("PhotoFields", function()
 		assert.equal("a.b", PhotoFields.title({ fileName = "a.b.jpg" }))
 	end)
 
+	it("returns the file name only for photos without LR title", function()
+		assert.equal("a.NEF", PhotoFields.untitledFileName({ title = " ", fileName = "a.NEF" }))
+		assert.is_nil(PhotoFields.untitledFileName({ title = "T", fileName = "a.NEF" }))
+		assert.is_nil(PhotoFields.untitledFileName({ fileName = "" }))
+	end)
+
 	it("converts exportable keywords to Flickr tags", function()
 		assert.equal('Deckel "New York" cat', PhotoFields.tags("Deckel, New York, cat"))
 		assert.equal("a b", PhotoFields.tags(" a ,b, A,, "))

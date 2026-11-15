@@ -398,9 +398,11 @@ local function planBatch(session, renderSettings, settings, collectionSettings)
 				fields.flickrId = backfilled
 				event("backfill", { photo = entry.photo.localIdentifier, id = backfilled })
 			end
-			entry.copyName = CatalogState.photoMeta(entry.photo).copyName
 			entry.locationOn = Privacy.locationEnabled(collectionSettings.location, settings.sendLocation == true)
-			entry.fields = PhotoFields.metadataFields(CatalogState.photoMeta(entry.photo), {
+			local meta = CatalogState.photoMeta(entry.photo)
+			entry.copyName = meta.copyName
+			entry.untitledFileName = PhotoFields.untitledFileName(meta)
+			entry.fields = PhotoFields.metadataFields(meta, {
 				privacy = Privacy.resolve(fields.flickrPrivacy, collectionSettings.privacy, settings.privacy),
 				location = entry.locationOn,
 			})
@@ -748,7 +750,13 @@ local function syncMetadata(functionContext, api, user, entries, album)
 			entry.remote = remote
 			local managed =
 				{ title = true, description = true, tags = true, privacy = true, location = entry.locationOn }
-			local d = RemoteState.diff(entry.norm, entry.state, remote, managed)
+			local d = RemoteState.diff(
+				entry.norm,
+				entry.state,
+				remote,
+				managed,
+				{ untitledFileName = entry.untitledFileName }
+			)
 			entry.push, entry.flickrOnly = d.push, d.flickrOnly
 			if next(d.conflicts) then
 				entry.conflicts = d.conflicts

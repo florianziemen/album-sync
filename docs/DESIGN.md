@@ -187,6 +187,7 @@ Optional later spike: embed the LR photo uuid as custom XMP in the rendered JPEG
 - **Per-field sync** (`RemoteState.lua`). For every photo whose metadata fingerprint changed:
   1. Flickr's current values are read: from the album listing (`photosets.getPhotos`, extras `description,tags,geo`, 500 per call) when the batch has at least 3 such photos, else from `photos.getInfo`.
   2. Values are compared normalized: trimmed text, Flickr-normalized tag sets, privacy value, location to 4 decimals.
+     A photo without Lightroom title counts as unchanged when Flickr's title is its file name, with or without an extension (Flickr's or an uploader's default title).
   3. Against the stored `metadataState` `{ lr, sent }`, each field is classified:
 
      | Changed in LR | Changed on Flickr | Result |

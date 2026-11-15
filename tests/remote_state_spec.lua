@@ -56,6 +56,32 @@ describe("RemoteState normalization", function()
 end)
 
 describe("RemoteState.diff", function()
+	it("treats a Flickr title equal to the file name of an untitled photo as unchanged", function()
+		local opts = { untitledFileName = "IMG_1.NEF" }
+		local lr = state({ title = "IMG_1" })
+		for _, remoteTitle in ipairs({ "IMG_1.jpg", "IMG_1", "IMG_1.NEF" }) do
+			local r = RemoteState.diff(lr, { lr = lr }, state({ title = remoteTitle }), ALL, opts)
+			assert.same({ push = {}, conflicts = {}, flickrOnly = {} }, r)
+		end
+		-- other fields are still compared
+		local r = RemoteState.diff(lr, { lr = lr }, state({ title = "IMG_1.jpg", privacy = "public" }), ALL, opts)
+		assert.same({ privacy = true }, r.flickrOnly)
+	end)
+
+	it("still reports other Flickr titles, and file-name titles when LR has a title", function()
+		local lr = state({ title = "IMG_1" })
+		local r = RemoteState.diff(
+			lr,
+			{ lr = lr },
+			state({ title = "Sunset" }),
+			ALL,
+			{ untitledFileName = "IMG_1.NEF" }
+		)
+		assert.same({ title = true }, r.flickrOnly)
+		r = RemoteState.diff(lr, { lr = lr }, state({ title = "IMG_1.jpg" }), ALL)
+		assert.same({ title = true }, r.flickrOnly)
+	end)
+
 	it("pushes fields changed only in Lightroom", function()
 		local r = RemoteState.diff(state({ title = "T2" }), { lr = state(), sent = state() }, state(), ALL)
 		assert.same({ "title" }, RemoteState.names(r.push))
